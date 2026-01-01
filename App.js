@@ -1,9 +1,13 @@
-import React from 'react';
-import { Provider } from 'react-redux';
+import React, { useEffect, useState } from 'react';
+import { Provider, useDispatch, useSelector } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+// ✅ IMPORT initialWindowMetrics
+import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
+import { ActivityIndicator, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { store } from './src/redux/store';
+import { loginSuccess } from './src/redux/slices/authSlice';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ThemeStatusBar } from './src/components/UI/ThemeStatusBar';
@@ -16,6 +20,45 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// ✅ Check login on app start
+const AuthLoader = ({ children }) => {
+  const dispatch = useDispatch();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const checkLogin = async () => {
+      try {
+        const token = await AsyncStorage.getItem('accessToken');
+        const userStr = await AsyncStorage.getItem('user');
+        
+        if (token && userStr) {
+          const user = JSON.parse(userStr);
+          dispatch(loginSuccess({ user, token }));
+          console.log('✅ User restored from AsyncStorage');
+        } else {
+          console.log('❌ No stored user found');
+        }
+      } catch (error) {
+        console.error('Error checking login:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkLogin();
+  }, [dispatch]);
+
+  if (loading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F7F9FC' }}>
+        <ActivityIndicator size="large" color="#1E88E5" />
+      </View>
+    );
+  }
+
+  return children;
+};
 
 // Navigation Theme Wrapper Component
 const NavigationTheme = ({ children }) => {
@@ -54,17 +97,20 @@ const NavigationTheme = ({ children }) => {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <Provider store={store}>
+    // ✅ PASS initialWindowMetrics HERE
+    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
+      <Provider store={store}>
+        <ThemeProvider>
           <QueryClientProvider client={queryClient}>
             <ThemeStatusBar />
-            <NavigationTheme>
-              <RootNavigator />
-            </NavigationTheme>
+            <AuthLoader>
+              <NavigationTheme>
+                <RootNavigator />
+              </NavigationTheme>
+            </AuthLoader>
           </QueryClientProvider>
-        </Provider>
-      </ThemeProvider>
+        </ThemeProvider>
+      </Provider>
     </SafeAreaProvider>
   );
 }

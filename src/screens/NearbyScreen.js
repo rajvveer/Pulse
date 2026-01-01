@@ -1,154 +1,397 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, FlatList } from 'react-native';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
+  FlatList, 
+  ActivityIndicator,
+  RefreshControl,
+  Linking,
+  AppState,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
+import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
+import PostCard from '../components/PostCard';
+import api from '../services/api';
 
-const NearbyScreen = () => {
+const CACHE_KEY = 'nearby_posts_cache';
+const LOCATION_CACHE_KEY = 'last_location';
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+const NearbyScreen = ({ navigation }) => {
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
-  const { location } = useSelector(state => state.ui);
+  const { user } = useSelector(state => state.auth);
 
-  // Mock nearby activity data
-  const nearbyActivity = [
-    {
-      id: 1,
-      type: 'post',
-      title: '5 people posted in the last hour',
-      subtitle: 'Within 500m of your location',
-      icon: '📝',
-      distance: 'Last post: 2 min ago',
-    },
-    {
-      id: 2,
-      type: 'hotspot',
-      title: 'City Palace area is active',
-      subtitle: '12 posts in the last 2 hours',
-      icon: '🔥',
-      distance: '300m away',
-    },
-    {
-      id: 3,
-      type: 'event',
-      title: 'Local event nearby',
-      subtitle: 'Food festival discussion trending',
-      icon: '🎉',
-      distance: '850m away',
-    },
-  ];
+  const [location, setLocation] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+  const [permissionBlocked, setPermissionBlocked] = useState(false);
+  const appState = useRef(AppState.currentState);
 
-  const renderActivityItem = ({ item }) => (
-    <TouchableOpacity 
-      style={[styles.activityCard, { 
-        backgroundColor: theme.colors.surface,
-        shadowColor: theme.colors.shadow,
-      }]}
-    >
-      <View style={styles.activityHeader}>
-        <Text style={styles.activityIcon}>{item.icon}</Text>
-        <View style={styles.activityInfo}>
-          <Text style={[styles.activityTitle, { color: theme.colors.text }]}>
-            {item.title}
-          </Text>
-          <Text style={[styles.activitySubtitle, { color: theme.colors.textSecondary }]}>
-            {item.subtitle}
+  // Monitor app state to detect return from settings
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App came to foreground, recheck permissions
+        recheckPermissions();
+      }
+      appState.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  const recheckPermissions = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        setPermissionBlocked(false);
+        setError('');
+        fetchNearbyData();
+      }
+    } catch (err) {
+      console.error('Permission recheck error:', err);
+    }
+  };
+
+  // Load cached data immediately
+  useEffect(() => {
+    loadCachedData();
+    fetchNearbyData();
+  }, []);
+
+  // Load cache for instant display
+  const loadCachedData = async () => {
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { posts: cachedPosts, timestamp } = JSON.parse(cached);
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          setPosts(cachedPosts);
+          setStats({
+            totalPosts: cachedPosts.length,
+            activeUsers: 0,
+            radius: user?.settings?.radius || 1000,
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Cache load error:', err);
+    }
+  };
+
+  // Optimized location fetch
+  const getLocation = async () => {
+    try {
+      const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        setPermissionBlocked(!canAskAgain);
+        throw new Error('Location permission denied');
+      }
+
+      // Try cached location first
+      const cachedLoc = await AsyncStorage.getItem(LOCATION_CACHE_KEY);
+      if (cachedLoc) {
+        const { coords, timestamp } = JSON.parse(cachedLoc);
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          setLocation(coords);
+          return coords;
+        }
+      }
+
+      // Use last known position for instant result
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (lastKnown) {
+        const coords = {
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude,
+        };
+        setLocation(coords);
+        
+        await AsyncStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify({
+          coords,
+          timestamp: Date.now()
+        }));
+        
+        return coords;
+      }
+
+      // Fallback to current position with low accuracy for speed
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        maximumAge: 10000,
+      });
+      
+      const coords = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      };
+      
+      setLocation(coords);
+      await AsyncStorage.setItem(LOCATION_CACHE_KEY, JSON.stringify({
+        coords,
+        timestamp: Date.now()
+      }));
+      
+      return coords;
+      
+    } catch (err) {
+      throw err;
+    }
+  };
+
+  // Fetch nearby data
+  const fetchNearbyData = async () => {
+    try {
+      const coords = await getLocation();
+      
+      const response = await api.get('/feed/nearby', {
+        params: {
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          radius: user?.settings?.radius || 1000,
+          limit: 20,
+        }
+      });
+
+      const postsData = response.data?.data || [];
+      
+      setPosts(postsData);
+      setStats({
+        totalPosts: postsData.length,
+        activeUsers: 0,
+        radius: user?.settings?.radius || 1000,
+      });
+      
+      // Cache the results
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
+        posts: postsData,
+        timestamp: Date.now()
+      }));
+      
+      setError('');
+
+    } catch (err) {
+      console.error('Nearby fetch error:', err);
+      setError(err?.response?.data?.message || err.message || 'Failed to load nearby posts');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchNearbyData();
+  };
+
+  // Handle like action
+  const handleLikePost = async (postId) => {
+    try {
+      const res = await api.post(`/posts/${postId}/like`);
+      
+      // Update the post in the list with new like count and isLiked status
+      setPosts(prev => prev.map(post => 
+        post._id === postId 
+          ? { 
+              ...post, 
+              stats: { ...post.stats, likes: res.data.data.likeCount },
+              isLiked: res.data.data.isLiked
+            }
+          : post
+      ));
+    } catch (error) {
+      console.error('Like error:', error);
+    }
+  };
+
+  // Render post using PostCard component
+  const renderPost = useCallback(({ item }) => (
+    <PostCard 
+      post={item}
+      onLike={handleLikePost}
+    />
+  ), []);
+
+  // Key extractor memoized
+  const keyExtractor = useCallback((item) => item._id, []);
+
+  const EmptyState = useCallback(() => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="location-outline" size={80} color={theme.colors.textSecondary} />
+      <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>
+        No posts nearby
+      </Text>
+      <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
+        Be the first to post in your area!
+      </Text>
+      <TouchableOpacity
+        style={[styles.createButton, { backgroundColor: theme.colors.primary }]}
+        onPress={() => navigation.navigate('Create')}
+      >
+        <Ionicons name="add" size={20} color="#FFF" />
+        <Text style={styles.createButtonText}>Create Post</Text>
+      </TouchableOpacity>
+    </View>
+  ), [theme, navigation]);
+
+  if (loading && posts.length === 0) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={theme.colors.primary} />
+          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
+            Finding posts near you...
           </Text>
         </View>
-      </View>
-      <Text style={[styles.activityDistance, { 
-        color: theme.colors.primary,
-        backgroundColor: isDark ? 'rgba(66, 165, 245, 0.2)' : 'rgba(30, 136, 229, 0.1)',
-      }]}>
-        {item.distance}
-      </Text>
-    </TouchableOpacity>
-  );
+      </SafeAreaView>
+    );
+  }
+
+  if (error && !location && posts.length === 0) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <View style={styles.errorContainer}>
+          <Ionicons 
+            name={permissionBlocked ? "lock-closed-outline" : "alert-circle-outline"} 
+            size={64} 
+            color={theme.colors.error} 
+          />
+          <Text style={[styles.errorTitle, { color: theme.colors.text }]}>
+            {permissionBlocked ? 'Location Access Blocked' : 'Location Required'}
+          </Text>
+          <Text style={[styles.errorText, { color: theme.colors.textSecondary }]}>
+            {permissionBlocked 
+              ? 'You previously denied location access. Please enable it in your device settings to see nearby posts.'
+              : 'This app needs your location to show nearby posts.'}
+          </Text>
+          
+          {permissionBlocked ? (
+            <>
+              <TouchableOpacity
+                style={[styles.settingsButton, { backgroundColor: theme.colors.primary }]}
+                onPress={() => Linking.openSettings()}
+              >
+                <Ionicons name="settings-outline" size={20} color="#FFF" />
+                <Text style={styles.settingsButtonText}>Open Settings</Text>
+              </TouchableOpacity>
+              <Text style={[styles.instructionText, { color: theme.colors.textSecondary }]}>
+                Go to Settings → Permissions → Location → Allow
+              </Text>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={[styles.retryButton, { backgroundColor: theme.colors.primary }]}
+              onPress={fetchNearbyData}
+            >
+              <Text style={styles.retryButtonText}>Grant Permission</Text>
+            </TouchableOpacity>
+          )}
+          
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={[styles.backButtonText, { color: theme.colors.textSecondary }]}>
+              Go Back
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Header */}
       <View style={[styles.header, { 
         backgroundColor: theme.colors.surface,
         borderBottomColor: theme.colors.border,
-        shadowColor: theme.colors.shadow,
       }]}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Nearby</Text>
-        <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
-          {location ? 'Discover local activity around Jaipur' : 'Getting your location...'}
-        </Text>
+        <View>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
+            Nearby
+          </Text>
+          <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+            Posts within {(user?.settings?.radius || 1000) / 1000}km
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.filterButton}
+          onPress={() => navigation.navigate('Settings')}
+        >
+          <Ionicons name="options-outline" size={24} color={theme.colors.text} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={[styles.mapSection, { 
+      {/* Stats Bar */}
+      {stats && (
+        <View style={[styles.statsBar, { 
           backgroundColor: theme.colors.surface,
-          borderColor: theme.colors.border,
-          shadowColor: theme.colors.shadow,
+          borderBottomColor: theme.colors.border,
         }]}>
-          <Text style={styles.mapIcon}>🗺️</Text>
-          <Text style={[styles.mapText, { color: theme.colors.text }]}>
-            Interactive Map
-          </Text>
-          <Text style={[styles.mapSubtext, { color: theme.colors.textSecondary }]}>
-            Visual representation of nearby posts and activity
-          </Text>
-          
-          <TouchableOpacity 
-            style={[styles.button, { backgroundColor: theme.colors.primary }]}
-            onPress={() => {/* TODO: Implement map */}}
-          >
-            <Text style={styles.buttonText}>🔍 View Map</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={[styles.activitySection, { 
-          backgroundColor: theme.colors.surface,
-          shadowColor: theme.colors.shadow,
-        }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Live Activity Feed
-          </Text>
-          
-          <FlatList
-            data={nearbyActivity}
-            renderItem={renderActivityItem}
-            keyExtractor={item => item.id.toString()}
-            scrollEnabled={false}
-            showsVerticalScrollIndicator={false}
-          />
-        </View>
-
-        <View style={[styles.statsSection, { 
-          backgroundColor: theme.colors.surface,
-          shadowColor: theme.colors.shadow,
-        }]}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
-            Your Area Stats
-          </Text>
-          
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>23</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                People online
-              </Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>47</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                Posts today
-              </Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <Text style={styles.statNumber}>1.2km</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
-                Coverage area
-              </Text>
-            </View>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
+              {stats.totalPosts || posts.length}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Posts
+            </Text>
+          </View>
+          <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
+              {stats.activeUsers || 0}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Active
+            </Text>
+          </View>
+          <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.primary }]}>
+              {(stats.radius / 1000).toFixed(1)}km
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>
+              Radius
+            </Text>
           </View>
         </View>
-      </ScrollView>
+      )}
+
+      {/* Posts List */}
+      <FlatList
+        data={posts}
+        renderItem={renderPost}
+        keyExtractor={keyExtractor}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={EmptyState}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        updateCellsBatchingPeriod={50}
+        windowSize={10}
+        initialNumToRender={5}
+      />
     </SafeAreaView>
   );
 };
@@ -158,153 +401,138 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
     borderBottomWidth: 1,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
   },
   headerSubtitle: {
-    fontSize: 14,
-    marginTop: 4,
+    fontSize: 13,
+    marginTop: 2,
   },
-  content: {
-    flex: 1,
-    padding: 16,
+  filterButton: {
+    padding: 8,
   },
-  mapSection: {
-    padding: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  mapIcon: {
-    fontSize: 48,
-    marginBottom: 16,
-  },
-  mapText: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  mapSubtext: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  buttonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  activitySection: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  activityCard: {
-    padding: 16,
-    borderRadius: 8,
-    marginBottom: 8,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-    elevation: 1,
-  },
-  activityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  activityIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  activityInfo: {
-    flex: 1,
-  },
-  activityTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  activitySubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  activityDistance: {
-    fontSize: 12,
-    fontWeight: '500',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  statsSection: {
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 32,
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  statsRow: {
+  statsBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
   },
   statItem: {
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#1E88E5',
-    marginBottom: 4,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  statDivider: {
+    width: 1,
+  },
+  listContent: {
+    paddingVertical: 8,
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    paddingVertical: 80,
+    paddingHorizontal: 32,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  emptyText: {
+    fontSize: 14,
+    marginBottom: 24,
     textAlign: 'center',
+  },
+  createButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    gap: 8,
+  },
+  createButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+  },
+  settingsButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  instructionText: {
+    fontSize: 12,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+  },
+  retryButtonText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  backButton: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+  },
+  backButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

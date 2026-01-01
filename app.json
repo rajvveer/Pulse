@@ -26,12 +26,18 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION", 
+        "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE"
-      ]
+      ],
+      "softwareKeyboardLayoutMode": "resize",
+      "//": "👇 ADD THIS BLOCK TO FIX NAV BAR COLLISION 👇",
+      "androidNavigationBar": {
+        "backgroundColor": "#ffffff",
+        "barStyle": "dark-content"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"

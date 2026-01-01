@@ -119,10 +119,8 @@ const VerifyOTPScreen = ({ route, navigation }) => {
 
   // ==================== INPUT CHANGE HANDLER ====================
   const handleChangeText = (text, index) => {
-    // Clear error when user types
     if (error) setError("");
 
-    // Handle paste (multiple characters)
     if (text.length > 1) {
       const pastedDigits = text.slice(0, 6).split("");
       const newOtpDigits = [...otpDigits];
@@ -135,23 +133,19 @@ const VerifyOTPScreen = ({ route, navigation }) => {
       
       setOtpDigits(newOtpDigits);
       
-      // Focus last filled input or last input
       const nextIndex = Math.min(index + pastedDigits.length, 5);
       inputRefs.current[nextIndex]?.focus();
       return;
     }
 
-    // Only allow digits
     if (text && !/^[0-9]$/.test(text)) {
       return;
     }
 
-    // Handle single character input
     const newOtpDigits = [...otpDigits];
     newOtpDigits[index] = text;
     setOtpDigits(newOtpDigits);
 
-    // Auto-advance to next input
     if (text && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
@@ -161,10 +155,8 @@ const VerifyOTPScreen = ({ route, navigation }) => {
   const handleKeyPress = (e, index) => {
     if (e.nativeEvent.key === "Backspace") {
       if (!otpDigits[index] && index > 0) {
-        // Move to previous input if current is empty
         inputRefs.current[index - 1]?.focus();
       } else if (otpDigits[index]) {
-        // Clear current digit
         const newOtpDigits = [...otpDigits];
         newOtpDigits[index] = "";
         setOtpDigits(newOtpDigits);
@@ -201,7 +193,7 @@ const VerifyOTPScreen = ({ route, navigation }) => {
   // ==================== VERIFY OTP ====================
   const handleVerifyOTP = async (otpValue) => {
     const otp = otpValue || otpDigits.join("");
-    
+
     if (otp.length !== 6) {
       setError("Please enter the complete 6-digit code");
       triggerShakeAnimation();
@@ -215,7 +207,7 @@ const VerifyOTPScreen = ({ route, navigation }) => {
 
     try {
       const deviceId = await getDeviceId();
-      
+
       const response = await api.post("/auth/verify-otp", {
         identifier,
         otp,
@@ -224,38 +216,79 @@ const VerifyOTPScreen = ({ route, navigation }) => {
         platform: Platform.OS,
       });
 
-      const { user, accessToken, refreshToken, nextStep } = response.data;
+      console.log('=== OTP VERIFY RESPONSE ===');
+      console.log('Full response:', JSON.stringify(response.data, null, 2));
+
+      const { user, nextStep, tokens } = response.data || {};
+      const { accessToken, refreshToken } = tokens || {};
+
+      console.log('Parsed data:');
+      console.log('- user:', user);
+      console.log('- nextStep:', nextStep);
+      console.log('- accessToken:', accessToken ? 'EXISTS' : 'MISSING');
+      console.log('- refreshToken:', refreshToken ? 'EXISTS' : 'MISSING');
 
       if (nextStep === "create_username") {
-        // New user - navigate to username creation
+        console.log('→ Navigating to CreateUsername');
         navigation.replace("CreateUsername", {
           tempToken: response.data.tempToken,
         });
       } else {
-        // Existing user - login successful
-        // Store refresh token securely
-        await AsyncStorage.setItem('refreshToken', refreshToken);
+        // ✅ Existing user - login successful
+        console.log('=== STORING USER DATA ===');
         
-        // Update Redux state
+        // Store access token
+        if (accessToken) {
+          await AsyncStorage.setItem('accessToken', accessToken);
+          console.log('✅ accessToken stored');
+        } else {
+          console.log('❌ No accessToken to store');
+        }
+        
+        // Store refresh token
+        if (refreshToken) {
+          await AsyncStorage.setItem('refreshToken', refreshToken);
+          console.log('✅ refreshToken stored');
+        } else {
+          console.log('⚠️ No refreshToken provided');
+        }
+        
+        // Store user
+        if (user) {
+          await AsyncStorage.setItem('user', JSON.stringify(user));
+          console.log('✅ user stored:', user);
+        } else {
+          console.log('❌ No user to store');
+        }
+
+        // ✅ Verify storage
+        const storedToken = await AsyncStorage.getItem('accessToken');
+        const storedUser = await AsyncStorage.getItem('user');
+        console.log('=== VERIFICATION ===');
+        console.log('Stored token exists:', !!storedToken);
+        console.log('Stored user:', storedUser);
+
+        // Update Redux
         dispatch(loginSuccess({ user, token: accessToken }));
-        
-        // Optional: Show success message
+        console.log('✅ Redux updated');
+
         Alert.alert("Success", "Login successful!", [{ text: "OK" }]);
       }
     } catch (error) {
+      console.error('=== OTP VERIFICATION ERROR ===');
+      console.error('Error:', error.message);
+      console.error('Response:', error.response?.data);
+      
       const errorMessage =
         error.response?.data?.error || "Invalid or expired OTP. Please try again.";
-      
+
       setError(errorMessage);
       triggerShakeAnimation();
-      
-      // Clear OTP on error
+
       setOtpDigits(["", "", "", "", "", ""]);
       setTimeout(() => {
         inputRefs.current[0]?.focus();
       }, 300);
-      
-      console.error("OTP verification error:", error);
     } finally {
       setLoading(false);
     }
@@ -274,12 +307,10 @@ const VerifyOTPScreen = ({ route, navigation }) => {
         method,
       });
 
-      // Reset state
       setOtpDigits(["", "", "", "", "", ""]);
       setCountdown(60);
       setCanResend(false);
       
-      // Focus first input
       setTimeout(() => {
         inputRefs.current[0]?.focus();
       }, 100);
@@ -318,7 +349,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.content}
       >
-        {/* ==================== HEADER ==================== */}
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
@@ -332,7 +362,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* ==================== TITLE SECTION ==================== */}
         <View style={styles.titleSection}>
           <Text style={[styles.title, { color: theme.colors.text }]}>
             Enter Verification Code
@@ -345,7 +374,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           </Text>
         </View>
 
-        {/* ==================== OTP INPUT BOXES ==================== */}
         <Animated.View
           style={[
             styles.otpContainer,
@@ -369,10 +397,7 @@ const VerifyOTPScreen = ({ route, navigation }) => {
             >
               <TextInput
                 ref={(ref) => (inputRefs.current[index] = ref)}
-                style={[
-                  styles.otpInput,
-                  { color: theme.colors.text },
-                ]}
+                style={[styles.otpInput, { color: theme.colors.text }]}
                 value={digit}
                 onChangeText={(text) => handleChangeText(text, index)}
                 onKeyPress={(e) => handleKeyPress(e, index)}
@@ -388,7 +413,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           ))}
         </Animated.View>
 
-        {/* ==================== AUTO-SUBMIT INDICATOR ==================== */}
         {autoSubmitting && (
           <View style={styles.autoSubmitContainer}>
             <ActivityIndicator 
@@ -410,7 +434,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           </View>
         )}
 
-        {/* ==================== ERROR MESSAGE ==================== */}
         {error && (
           <Text
             style={styles.errorText}
@@ -421,7 +444,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           </Text>
         )}
 
-        {/* ==================== VERIFY BUTTON ==================== */}
         <TouchableOpacity
           style={[
             styles.verifyButton,
@@ -444,7 +466,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           )}
         </TouchableOpacity>
 
-        {/* ==================== RESEND SECTION ==================== */}
         <View style={styles.resendSection}>
           <Text style={[styles.resendText, { color: theme.colors.textSecondary }]}>
             Didn't receive the code?
@@ -481,7 +502,6 @@ const VerifyOTPScreen = ({ route, navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* ==================== HELPER TEXT ==================== */}
         <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
           {method === "email"
             ? "Check your email inbox and spam folder"
@@ -494,144 +514,31 @@ const VerifyOTPScreen = ({ route, navigation }) => {
 
 // ==================== STYLES ====================
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-  },
-  header: {
-    paddingTop: 8,
-    paddingBottom: 16,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  backButtonText: {
-    fontSize: 28,
-    fontWeight: "300",
-  },
-  titleSection: {
-    marginTop: 20,
-    marginBottom: 40,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "700",
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 15,
-    marginBottom: 4,
-    lineHeight: 22,
-  },
-  identifier: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginTop: 4,
-  },
-  otpContainer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 16,
-    paddingHorizontal: 8,
-  },
-  otpBox: {
-    width: 50,
-    height: 60,
-    borderWidth: 2,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  otpInput: {
-    fontSize: 24,
-    fontWeight: "700",
-    textAlign: "center",
-    width: "100%",
-    height: "100%",
-    padding: 0,
-  },
-  autoSubmitContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  autoSubmitSpinner: {
-    marginRight: 8,
-  },
-  autoSubmitText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  cancelButton: {
-    marginLeft: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  cancelButtonText: {
-    fontSize: 13,
-    fontWeight: "600",
-    textDecorationLine: "underline",
-  },
-  errorText: {
-    color: "#EF4444",
-    fontSize: 13,
-    textAlign: "center",
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  verifyButton: {
-    height: 54,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  verifyButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  resendSection: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 24,
-    flexWrap: "wrap",
-  },
-  resendText: {
-    fontSize: 14,
-  },
-  resendButton: {
-    marginLeft: 8,
-  },
-  resendButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  helperText: {
-    fontSize: 12,
-    textAlign: "center",
-    marginTop: 32,
-    lineHeight: 18,
-  },
+  container: { flex: 1 },
+  content: { flex: 1, paddingHorizontal: 24 },
+  header: { paddingTop: 8, paddingBottom: 16 },
+  backButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+  backButtonText: { fontSize: 28, fontWeight: "300" },
+  titleSection: { marginTop: 20, marginBottom: 40 },
+  title: { fontSize: 28, fontWeight: "700", marginBottom: 12 },
+  subtitle: { fontSize: 15, marginBottom: 4, lineHeight: 22 },
+  identifier: { fontSize: 16, fontWeight: "600", marginTop: 4 },
+  otpContainer: { flexDirection: "row", justifyContent: "space-between", marginBottom: 16, paddingHorizontal: 8 },
+  otpBox: { width: 50, height: 60, borderWidth: 2, borderRadius: 12, justifyContent: "center", alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
+  otpInput: { fontSize: 24, fontWeight: "700", textAlign: "center", width: "100%", height: "100%", padding: 0 },
+  autoSubmitContainer: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 16, marginBottom: 8 },
+  autoSubmitSpinner: { marginRight: 8 },
+  autoSubmitText: { fontSize: 14, fontWeight: "500" },
+  cancelButton: { marginLeft: 12, paddingHorizontal: 8, paddingVertical: 4 },
+  cancelButtonText: { fontSize: 13, fontWeight: "600", textDecorationLine: "underline" },
+  errorText: { color: "#EF4444", fontSize: 13, textAlign: "center", marginBottom: 16, marginTop: 8 },
+  verifyButton: { height: 54, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 8, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  verifyButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+  resendSection: { flexDirection: "row", justifyContent: "center", alignItems: "center", marginTop: 24, flexWrap: "wrap" },
+  resendText: { fontSize: 14 },
+  resendButton: { marginLeft: 8 },
+  resendButtonText: { fontSize: 14, fontWeight: "600" },
+  helperText: { fontSize: 12, textAlign: "center", marginTop: 32, lineHeight: 18 },
 });
 
 export default VerifyOTPScreen;

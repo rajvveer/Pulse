@@ -1,8 +1,8 @@
-// src/screens/Auth/LoginScreen.js
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, TextInput,
-  ActivityIndicator, Alert, Animated, Platform, Keyboard
+  ActivityIndicator, Alert, Animated, Platform, Keyboard,
+  Dimensions
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -10,6 +10,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
 import api from '../../services/api';
+
+const { width } = Dimensions.get('window');
 
 // ==================== VALIDATION UTILITIES ====================
 const validateEmail = (email) => {
@@ -31,15 +33,12 @@ const sanitizeInput = (input) => {
 const getOrCreateDeviceId = async () => {
   try {
     let deviceId = await AsyncStorage.getItem('deviceId');
-    
     if (!deviceId) {
       deviceId = `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
       await AsyncStorage.setItem('deviceId', deviceId);
     }
-    
     return deviceId;
   } catch (error) {
-    console.error('Error getting device ID:', error);
     return `session-${Date.now()}`;
   }
 };
@@ -58,261 +57,196 @@ const LoginScreen = () => {
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(50)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.9)).current;
+  const scaleAnim = React.useRef(new Animated.Value(0.3)).current; // For the logo pop
 
-  // Entrance animations
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 600,
+        duration: 800,
         useNativeDriver: true,
       }),
-      Animated.timing(slideAnim, {
+      Animated.spring(slideAnim, {
         toValue: 0,
-        duration: 600,
+        friction: 8,
         useNativeDriver: true,
       }),
       Animated.spring(scaleAnim, {
         toValue: 1,
-        friction: 8,
-        tension: 40,
+        friction: 6,
         useNativeDriver: true,
       }),
     ]).start();
   }, []);
 
-  // Detect authentication method
+  // ==================== FIXED LOGIC ====================
   const method = useMemo(() => {
     const trimmed = identifier.trim();
     if (!trimmed) return null;
-    return trimmed.includes('@') ? 'email' : 'phone';
+    // FIX: Only switch to phone mode if it explicitly starts with a number or '+'
+    const isPhoneStart = /^[0-9+]/.test(trimmed);
+    return isPhoneStart ? 'phone' : 'email';
   }, [identifier]);
 
-  // Clear error when user types
   useEffect(() => {
     if (error) setError('');
   }, [identifier]);
 
-  // ==================== INPUT VALIDATION ====================
-  const validateInput = () => {
+  const handleInitiateAuth = async () => {
     const trimmed = identifier.trim();
     
     if (!trimmed) {
-      return {
-        valid: false,
-        message: 'Please enter your email or phone number'
-      };
+      setError('Please enter your email or phone number');
+      return;
     }
 
     if (method === 'email' && !validateEmail(trimmed)) {
-      return {
-        valid: false,
-        message: 'Please enter a valid email address'
-      };
+      setError('Please enter a valid email address');
+      return;
     }
     
     if (method === 'phone' && !validatePhone(trimmed)) {
-      return {
-        valid: false,
-        message: 'Please enter a valid phone number (at least 10 digits)'
-      };
-    }
-
-    return { valid: true };
-  };
-
-  // ==================== AUTHENTICATION HANDLER ====================
-  const handleInitiateAuth = async () => {
-    const validation = validateInput();
-    if (!validation.valid) {
-      setError(validation.message);
-      Alert.alert('Validation Error', validation.message);
+      setError('Please enter a valid 10-digit phone number');
       return;
     }
 
     setLoading(true);
-    setError('');
     Keyboard.dismiss();
 
     try {
       const deviceId = await getOrCreateDeviceId();
       const sanitizedIdentifier = sanitizeInput(identifier);
 
-      const response = await api.post('/auth/initiate', {
+      await api.post('/auth/initiate', {
         identifier: sanitizedIdentifier,
         method,
         deviceId,
         platform: Platform.OS,
       });
 
-      navigation.navigate('VerifyOTP', { 
-        identifier: sanitizedIdentifier, 
-        method 
-      });
+      navigation.navigate('VerifyOTP', { identifier: sanitizedIdentifier, method });
 
     } catch (error) {
-      const errorMessage = error.response?.data?.error 
-        || error.response?.data?.message 
-        || 'Unable to connect. Please check your internet connection and try again.';
-      
+      const errorMessage = error.response?.data?.error || 'Connection failed. Please try again.';
       setError(errorMessage);
-      Alert.alert('Authentication Error', errorMessage);
-      console.error('Auth initiation error:', error);
+      Alert.alert('Error', errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
-  // ==================== RENDER ====================
   return (
-    <SafeAreaView 
-      style={[styles.container, { backgroundColor: theme.colors.background }]}
-      accessible={true}
-    >
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Animated.View 
         style={[
           styles.content,
-          {
-            opacity: fadeAnim,
-            transform: [
-              { translateY: slideAnim },
-              { scale: scaleAnim }
-            ]
-          }
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
         ]}
       >
-        {/* Logo/Icon Section */}
+        {/* LOGO SECTION RESTORED */}
         <View style={styles.logoContainer}>
-          <View style={[styles.logoCircle, { backgroundColor: theme.colors.primary }]}>
+          <Animated.View 
+            style={[
+              styles.logoCircle, 
+              { 
+                backgroundColor: theme.colors.primary,
+                transform: [{ scale: scaleAnim }] // Pop animation
+              }
+            ]}
+          >
             <Text style={styles.logoText}>P</Text>
-          </View>
+          </Animated.View>
         </View>
 
         {/* Header */}
         <View style={styles.headerSection}>
-          <Text 
-            style={[styles.title, { color: theme.colors.text }]}
-            accessibilityRole="header"
-          >
+          <Text style={[styles.title, { color: theme.colors.text }]}>
             Welcome to Pulse
           </Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            Enter your email or phone number to continue
+            Enter your details to continue
           </Text>
         </View>
 
         {/* Input Section */}
         <View style={styles.inputSection}>
-          <View style={styles.inputContainer}>
-            <View 
-              style={[
-                styles.inputWrapper,
-                {
-                  borderColor: error 
-                    ? '#EF4444' 
-                    : isFocused 
-                    ? theme.colors.primary 
-                    : theme.colors.border,
-                  backgroundColor: theme.colors.surface,
-                  borderWidth: isFocused ? 2 : 1.5,
-                }
-              ]}
-            >
-              <View style={styles.inputIconContainer}>
-                <Text style={styles.inputIcon}>
-                  {method === 'email' ? '📧' : method === 'phone' ? '📱' : '👤'}
-                </Text>
-              </View>
-              
-              <TextInput
-                style={[styles.input, { color: theme.colors.text }]}
-                placeholder="Email or Phone Number"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={identifier}
-                onChangeText={setIdentifier}
-                keyboardType={method === 'phone' ? 'phone-pad' : 'email-address'}
-                autoComplete={method === 'phone' ? 'tel' : 'email'}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!loading}
-                returnKeyType="done"
-                onSubmitEditing={handleInitiateAuth}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                accessible={true}
-                accessibilityLabel="Email or phone number input"
-                accessibilityHint="Enter your email address or phone number to continue"
-              />
+          <View style={[
+            styles.inputContainer,
+            {
+              backgroundColor: isDark ? '#1A1A1A' : '#F7F7F8',
+              borderColor: error ? '#FF4B4B' : isFocused ? theme.colors.primary : 'transparent',
+              borderWidth: 2,
+              // Shadow logic
+              shadowColor: isFocused ? theme.colors.primary : '#000',
+              shadowOpacity: isFocused ? 0.15 : 0,
+              shadowRadius: 10,
+              elevation: isFocused ? 4 : 0,
+            }
+          ]}>
+            <View style={styles.leftIcon}>
+              <Text style={{ fontSize: 20 }}>
+                {method === 'phone' ? '📱' : method === 'email' ? '📧' : '👤'}
+              </Text>
             </View>
-            
-            {/* Method Indicator */}
-            {method && identifier.trim() && !error && (
-              <Animated.Text 
-                style={[styles.methodIndicator, { color: theme.colors.primary }]}
-              >
-                ✓ {method === 'email' ? 'Email detected' : 'Phone number detected'}
-              </Animated.Text>
-            )}
-            
-            {/* Error Message */}
-            {error && (
-              <Animated.Text 
-                style={styles.errorText} 
-                accessibilityLiveRegion="polite"
-              >
-                ⚠️ {error}
-              </Animated.Text>
-            )}
+
+            <TextInput
+              style={[styles.input, { color: theme.colors.text }]}
+              placeholder="Email or Phone Number"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={identifier}
+              onChangeText={setIdentifier}
+              keyboardType="email-address" // Prevents flickering
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+              returnKeyType="done"
+              onSubmitEditing={handleInitiateAuth}
+              onFocus={() => setIsFocused(true)}
+              onBlur={() => setIsFocused(false)}
+            />
           </View>
 
-          {/* Continue Button */}
+          {/* Error Message */}
+          <View style={styles.errorContainer}>
+            {error ? (
+              <Text style={styles.errorText}>⚠️ {error}</Text>
+            ) : null}
+          </View>
+
+          {/* Modern Button */}
           <TouchableOpacity
             style={[
               styles.loginButton, 
               { 
                 backgroundColor: theme.colors.primary,
                 opacity: (loading || !identifier.trim()) ? 0.6 : 1,
+                shadowColor: theme.colors.primary,
               }
             ]}
             onPress={handleInitiateAuth}
             disabled={loading || !identifier.trim()}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Continue"
-            accessibilityHint="Tap to proceed with authentication"
             activeOpacity={0.8}
           >
             {loading ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <View style={styles.buttonContent}>
-                <Text style={styles.loginButtonText}>Continue</Text>
-                <Text style={styles.buttonArrow}>→</Text>
-              </View>
+              <Text style={styles.loginButtonText}>Continue</Text>
             )}
           </TouchableOpacity>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={[styles.helperText, { color: theme.colors.textSecondary }]}>
-            We'll send you a verification code
-          </Text>
-          
-          <View style={styles.securityBadge}>
-            <Text style={styles.securityIcon}>🔒</Text>
-            <Text style={[styles.securityText, { color: theme.colors.textSecondary }]}>
-              Secure & encrypted
-            </Text>
-          </View>
+           <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
+             Secure Login with Pulse
+           </Text>
         </View>
+
       </Animated.View>
     </SafeAreaView>
   );
 };
 
-// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -322,140 +256,105 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     justifyContent: 'center',
   },
+  // LOGO STYLES RESTORED & IMPROVED
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 40,
   },
   logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 90, // Slightly bigger for modern feel
+    height: 90,
+    borderRadius: 45,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 10,
   },
   logoText: {
-    fontSize: 40,
-    fontWeight: '700',
+    fontSize: 48,
+    fontWeight: '800',
     color: '#FFFFFF',
+    includeFontPadding: false, // Centers text better vertically
   },
   headerSection: {
-    marginBottom: 40,
-    alignItems: 'center',
+    marginBottom: 32,
+    alignItems: 'center', // Centered alignment
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
-    marginBottom: 12,
+    marginBottom: 10,
     textAlign: 'center',
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: 20,
+    opacity: 0.8,
   },
   inputSection: {
     marginBottom: 24,
   },
   inputContainer: {
-    width: '100%',
-    marginBottom: 20,
-  },
-  inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 58,
-    borderRadius: 14,
-    paddingHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    height: 64, // Modern taller input
+    borderRadius: 18,
+    paddingHorizontal: 16,
   },
-  inputIconContainer: {
-    width: 50,
-    height: 50,
-    justifyContent: 'center',
+  leftIcon: {
+    marginRight: 14,
+    width: 24,
     alignItems: 'center',
-  },
-  inputIcon: {
-    fontSize: 24,
   },
   input: {
     flex: 1,
-    fontSize: 16,
-    paddingRight: 16,
+    fontSize: 17,
+    fontWeight: '500',
     height: '100%',
   },
-  methodIndicator: {
-    fontSize: 13,
+  errorContainer: {
+    height: 24, // Fix height to prevent jumping
+    justifyContent: 'center',
     marginTop: 8,
-    marginLeft: 4,
-    fontWeight: '500',
+    marginBottom: 8,
+    paddingHorizontal: 4,
   },
   errorText: {
-    color: '#EF4444',
+    color: '#FF4B4B',
     fontSize: 13,
-    marginTop: 8,
-    marginLeft: 4,
+    fontWeight: '600',
   },
   loginButton: {
-    height: 58,
-    borderRadius: 14,
+    height: 64,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 8,
+    // Bloom Shadow
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
   },
   loginButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  buttonArrow: {
-    color: '#FFFFFF',
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   footer: {
-    marginTop: 32,
+    marginTop: 'auto',
+    marginBottom: 20,
     alignItems: 'center',
+    opacity: 0.6,
   },
-  helperText: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  securityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: 'rgba(128, 128, 128, 0.1)',
-  },
-  securityIcon: {
-    fontSize: 14,
-    marginRight: 6,
-  },
-  securityText: {
-    fontSize: 12,
+  footerText: {
+    fontSize: 13,
     fontWeight: '500',
-  },
+  }
 });
 
 export default LoginScreen;
