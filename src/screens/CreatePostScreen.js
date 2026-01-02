@@ -1,21 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  ActivityIndicator,
-  Image,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  FlatList,
-  Dimensions,
-  Animated,
-  Vibration,
-  Keyboard
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput,
+  ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform,
+  FlatList, Dimensions, Animated, Vibration, Keyboard
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,16 +11,16 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
 import api from '../services/api';
-import { useSelector } from 'react-redux'; // To get current user avatar
+import { useSelector } from 'react-redux';
 
 const { width } = Dimensions.get('window');
-const MAX_IMAGES = 4; // Modern apps usually limit to 4 for grids
+const MAX_IMAGES = 4;
 const MAX_TEXT_LENGTH = 2000;
 
 const CreatePostScreen = ({ navigation }) => {
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
-  const { user } = useSelector(state => state.auth); // Get logged in user
+  const { user } = useSelector(state => state.auth);
 
   // State
   const [text, setText] = useState('');
@@ -41,7 +28,7 @@ const CreatePostScreen = ({ navigation }) => {
   const [location, setLocation] = useState(null);
   const [isAnonymous, setIsAnonymous] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showPoll, setShowPoll] = useState(false); // New Feature
+  const [showPoll, setShowPoll] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   // Animations
@@ -66,8 +53,7 @@ const CreatePostScreen = ({ navigation }) => {
   // --- LOGIC HANDLERS ---
 
   const triggerHaptic = () => {
-    // Simple vibration for feedback
-    Vibration.vibrate(10); 
+    Vibration.vibrate(10);
   };
 
   const handleBack = () => {
@@ -77,10 +63,6 @@ const CreatePostScreen = ({ navigation }) => {
         'You have unsaved changes. Do you want to save this as a draft?',
         [
           { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
-          { text: 'Save Draft', onPress: () => { 
-             // Logic to save to AsyncStorage would go here
-             navigation.goBack(); 
-          }},
           { text: 'Cancel', style: 'cancel' }
         ]
       );
@@ -139,7 +121,6 @@ const CreatePostScreen = ({ navigation }) => {
     }
   }, [location]);
 
-  // Enhanced Anonymous Toggle
   const toggleAnonymous = useCallback(() => {
     triggerHaptic();
     setIsAnonymous(prev => !prev);
@@ -174,10 +155,8 @@ const CreatePostScreen = ({ navigation }) => {
         media,
         location,
         isAnonymous,
-        // poll: showPoll ? pollData : null (Backend implementation needed)
       });
 
-      // Success Sound or Haptic could go here
       navigation.goBack();
     } catch (error) {
       Alert.alert('Error', 'Failed to post. Try again.');
@@ -185,8 +164,6 @@ const CreatePostScreen = ({ navigation }) => {
       setLoading(false);
     }
   };
-
-  // --- RENDER HELPERS ---
 
   const canPost = (text.trim().length > 0 || images.length > 0) && !loading;
 
@@ -202,7 +179,6 @@ const CreatePostScreen = ({ navigation }) => {
     </View>
   );
 
-  // Mock Avatar Initials
   const avatarUrl = user?.profile?.avatar || user?.avatar;
   const initial = (user?.username || '?').charAt(0).toUpperCase();
 
@@ -213,6 +189,15 @@ const CreatePostScreen = ({ navigation }) => {
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity onPress={handleBack} style={styles.cancelBtn}>
           <Text style={[styles.cancelText, { color: theme.colors.text }]}>Cancel</Text>
+        </TouchableOpacity>
+        
+        {/* ✅ NEW REEL BUTTON ADDED HERE */}
+        <TouchableOpacity 
+          style={styles.reelButton}
+          onPress={() => navigation.navigate('CreateReel')}
+        >
+          <Ionicons name="videocam" size={18} color="#FFF" />
+          <Text style={styles.reelButtonText}>Reel</Text>
         </TouchableOpacity>
         
         <TouchableOpacity 
@@ -237,7 +222,7 @@ const CreatePostScreen = ({ navigation }) => {
           showsVerticalScrollIndicator={false}
         >
           
-          {/* 2. User Identity Switcher (New Feature) */}
+          {/* Identity Switcher */}
           <Animated.View style={[styles.identityRow, { opacity: fadeAnim }]}>
             <View style={styles.avatarContainer}>
               {isAnonymous ? (
@@ -268,20 +253,20 @@ const CreatePostScreen = ({ navigation }) => {
             </TouchableOpacity>
           </Animated.View>
 
-          {/* 3. Modern Text Input */}
+          {/* Text Input */}
           <TextInput
             style={[styles.input, { color: theme.colors.text }]}
             placeholder={isAnonymous ? "What's the secret?..." : "What's happening?"}
             placeholderTextColor={theme.colors.textSecondary}
             multiline
             autoFocus
-            scrollEnabled={false} // Allow ScrollView to handle scrolling
+            scrollEnabled={false}
             value={text}
             onChangeText={setText}
             maxLength={MAX_TEXT_LENGTH}
           />
 
-          {/* 4. Poll Creator (New Feature UI) */}
+          {/* Poll Creator */}
           {showPoll && (
             <View style={[styles.pollContainer, { borderColor: theme.colors.border }]}>
                <View style={styles.pollOption}>
@@ -296,7 +281,7 @@ const CreatePostScreen = ({ navigation }) => {
             </View>
           )}
 
-          {/* 5. Media Carousel */}
+          {/* Media Carousel */}
           {images.length > 0 && (
             <FlatList
               data={images}
@@ -309,7 +294,7 @@ const CreatePostScreen = ({ navigation }) => {
             />
           )}
 
-          {/* 6. Chips (Location/Tags) */}
+          {/* Chips */}
           <View style={styles.chipContainer}>
             {location && (
               <View style={[styles.chip, { backgroundColor: theme.colors.primary + '15' }]}>
@@ -325,11 +310,10 @@ const CreatePostScreen = ({ navigation }) => {
             )}
           </View>
 
-          {/* Spacer for bottom toolbar */}
           <View style={{ height: 80 }} /> 
         </ScrollView>
 
-        {/* 7. Modern Sticky Toolbar (Moves with Keyboard) */}
+        {/* Toolbar */}
         <View style={[styles.toolbar, { 
           backgroundColor: theme.colors.surface, 
           borderTopColor: theme.colors.border,
@@ -381,6 +365,21 @@ const styles = StyleSheet.create({
   },
   cancelText: {
     fontSize: 16,
+  },
+  // ✅ NEW REEL BUTTON STYLES
+  reelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E1306C', // Instagram pink/red color
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+    gap: 5
+  },
+  reelButtonText: {
+    color: '#FFF',
+    fontWeight: '600',
+    fontSize: 12
   },
   postBtn: {
     paddingHorizontal: 20,
@@ -509,7 +508,7 @@ const styles = StyleSheet.create({
   toolbar: {
     paddingVertical: 12,
     borderTopWidth: 0.5,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 12, // Extra padding for iPhone home indicator
+    paddingBottom: Platform.OS === 'ios' ? 20 : 12, 
   },
   toolbarScroll: {
     paddingHorizontal: 20,
