@@ -8,80 +8,59 @@ export const ThemeToggle = () => {
   const theme = getTheme(isDark);
 
   const themeOptions = [
-    { key: 'light', label: '☀️ Light', icon: '☀️' },
-    { key: 'dark', label: '🌙 Dark', icon: '🌙' },
-    { key: 'system', label: '📱 System', icon: '📱' },
+    { key: 'light', icon: '☀️' },
+    { key: 'dark', icon: '🌙' },
+    { key: 'system', icon: '📱' },
   ];
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
-      <Text style={[styles.title, { color: theme.colors.text }]}>
-        Theme Preference
-      </Text>
-      <View style={styles.options}>
-        {themeOptions.map((option) => (
+    <View style={[styles.container, { backgroundColor: theme.colors.card }]}>
+      {themeOptions.map((option, index) => {
+        const isSelected = themeMode === option.key;
+        const isFirst = index === 0;
+        const isLast = index === themeOptions.length - 1;
+        
+        return (
           <TouchableOpacity
             key={option.key}
+            onPress={() => changeTheme(option.key)}
+            activeOpacity={0.7}
             style={[
               styles.option,
-              { 
-                backgroundColor: themeMode === option.key 
+              {
+                backgroundColor: isSelected 
                   ? theme.colors.primary 
-                  : theme.colors.background,
-                borderColor: theme.colors.border,
-              }
+                  : 'transparent',
+                borderTopLeftRadius: isFirst ? 8 : 0,
+                borderBottomLeftRadius: isFirst ? 8 : 0,
+                borderTopRightRadius: isLast ? 8 : 0,
+                borderBottomRightRadius: isLast ? 8 : 0,
+              },
             ]}
-            onPress={() => changeTheme(option.key)}
           >
             <Text style={styles.icon}>{option.icon}</Text>
-            <Text 
-              style={[
-                styles.optionText,
-                { 
-                  color: themeMode === option.key 
-                    ? '#FFFFFF' 
-                    : theme.colors.text 
-                }
-              ]}
-            >
-              {option.label}
-            </Text>
           </TouchableOpacity>
-        ))}
-      </View>
+        );
+      })}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
-    borderRadius: 12,
-    marginVertical: 8,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  options: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    borderRadius: 8,
+    padding: 2,
+    alignSelf: 'flex-start',
   },
   option: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 4,
-    borderWidth: 1,
+    marginHorizontal: 1,
   },
   icon: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  optionText: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 18,
   },
 });

@@ -1,7 +1,7 @@
 import { io } from 'socket.io-client';
 import Constants from 'expo-constants';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.8:3000'; 
+const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.9:3000'; 
 
 let socket = null;
 
