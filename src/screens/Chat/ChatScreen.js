@@ -32,11 +32,14 @@ const { width, height } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 60;
 
 const ChatScreen = ({ route, navigation }) => {
-  const { conversationId, targetUser } = route.params;
+  const { conversationId, targetUser, conversation } = route.params;
   const { user, token } = useSelector(state => state.auth);
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const insets = useSafeAreaInsets();
+
+  // ✅ Group Chat Detection
+  const isGroup = conversation?.type === 'group';
 
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
@@ -52,13 +55,12 @@ const ChatScreen = ({ route, navigation }) => {
   const flatListRef = useRef();
   const typingTimeoutRef = useRef(null);
   const inputRef = useRef(null);
-  const isInitialMount = useRef(true);
 
   const getMyId = () => user?.id || user?.userId || user?._id;
   const getUserId = (userObj) => userObj?.id || userObj?._id || userObj;
 
   useEffect(() => {
-    console.log("🟢 [ChatScreen] Mounted. ID:", conversationId);
+    console.log("🟢 [ChatScreen] Mounted. ID:", conversationId, "IsGroup:", isGroup);
     let isMounted = true;
 
     const markAsRead = async () => {
@@ -102,14 +104,12 @@ const ChatScreen = ({ route, navigation }) => {
   const setupSocketListeners = () => {
     if (!socketService.socket) return;
 
-    // Remove old listeners
     socketService.socket.off('new_message');
     socketService.socket.off('messages_seen');
     socketService.socket.off('user_typing');
     socketService.socket.off('message_reaction');
     socketService.socket.off('message_deleted');
 
-    // ✅ CRITICAL FIX: Prevent duplicate messages
     socketService.onNewMessage((newMessage) => {
       if (newMessage.conversation === conversationId) {
         const senderId = getUserId(newMessage.sender);
@@ -123,7 +123,6 @@ const ChatScreen = ({ route, navigation }) => {
         });
 
         setMessages(prev => {
-          // If it's MY message, update the temp message
           if (isFromMe) {
             const tempIndex = prev.findIndex(m => 
               m.tempId && 
@@ -133,18 +132,15 @@ const ChatScreen = ({ route, navigation }) => {
 
             if (tempIndex !== -1) {
               console.log("✅ Replacing temp message with real one");
-              // Replace temp message with real one
               const updated = [...prev];
               updated[tempIndex] = { ...newMessage, status: 'sent' };
               return updated;
             }
             
-            // If no temp found, ignore (shouldn't happen in normal flow)
             console.log("⚠️ No temp message found, skipping");
             return prev;
           }
 
-          // If from OTHER user, check if already exists
           const exists = prev.find(m => m._id === newMessage._id);
           if (exists) {
             console.log("⚠️ Message already exists, skipping");
@@ -155,7 +151,6 @@ const ChatScreen = ({ route, navigation }) => {
           return [newMessage, ...prev];
         });
 
-        // Mark as seen if from other user
         if (!isFromMe) {
           setTimeout(() => {
             socketService.emit('mark_seen', {
@@ -167,7 +162,6 @@ const ChatScreen = ({ route, navigation }) => {
       }
     });
 
-    // Typing indicator
     socketService.onTyping(({ userId, isTyping: typingStatus }) => {
       const myId = getMyId();
       if (String(userId) !== String(myId)) {
@@ -175,7 +169,6 @@ const ChatScreen = ({ route, navigation }) => {
       }
     });
 
-    // Messages seen
     socketService.socket.on('messages_seen', ({ userId, messageIds }) => {
       const myId = getMyId();
       setMessages(prev => prev.map(msg => {
@@ -188,7 +181,6 @@ const ChatScreen = ({ route, navigation }) => {
       }));
     });
 
-    // Message reactions
     socketService.socket.on('message_reaction', ({ messageId, reaction, userId }) => {
       setMessages(prev => prev.map(msg => {
         if (msg._id === messageId) {
@@ -204,7 +196,6 @@ const ChatScreen = ({ route, navigation }) => {
       }));
     });
 
-    // Message deleted
     socketService.socket.on('message_deleted', ({ messageId }) => {
       setMessages(prev => prev.map(msg =>
         msg._id === messageId
@@ -255,30 +246,32 @@ const ChatScreen = ({ route, navigation }) => {
       reactions: {}
     };
 
-    console.log("📤 Sending message:", { tempId, content, replyTo: replyTo?._id });
+    console.log("📤 Sending message:", { tempId, content, replyTo: replyTo?._id, isGroup });
 
-    // Add temp message immediately
     setMessages(prev => [tempMessage, ...prev]);
     setReplyTo(null);
 
+    // ✅ Updated payload for groups
     const payload = {
       conversationId,
-      targetUserId: getUserId(targetUser),
       content,
       type,
       media,
       replyTo: replyTo?._id
     };
 
+    // Only add targetUserId for DMs
+    if (!isGroup && targetUser) {
+      payload.targetUserId = getUserId(targetUser);
+    }
+
     socketService.sendMessage(payload, (response) => {
       console.log("📬 Server response:", response);
       
       if (response && response.status === 'ok') {
         console.log("✅ Message acknowledged by server");
-        // The socket 'new_message' listener will handle the update
       } else {
         console.error("❌ Send failed");
-        // Mark as failed
         setMessages(prev => prev.map(msg =>
           msg.tempId === tempId
             ? { ...msg, status: 'failed' }
@@ -375,45 +368,89 @@ const ChatScreen = ({ route, navigation }) => {
     });
   };
 
-  const renderHeader = () => (
-    <View style={[styles.header, {
-      backgroundColor: isDark ? '#000' : '#FFF',
-      borderBottomColor: isDark ? '#262626' : '#DBDBDB'
-    }]}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-        <Ionicons name="chevron-back" size={30} color={theme.colors.text} />
-      </TouchableOpacity>
+  // ✅ Updated Header for Group Support
+  const renderHeader = () => {
+    let displayName, avatarUri, subtitle = '';
 
-      <TouchableOpacity style={styles.headerCenter} activeOpacity={0.7}>
-        <Image
-          source={{ uri: targetUser?.profile?.avatar || targetUser?.avatar || 'https://via.placeholder.com/40' }}
-          style={styles.headerAvatar}
-        />
-        <View style={styles.headerInfo}>
-          <Text style={[styles.headerName, { color: theme.colors.text }]}>
-            {targetUser?.username || targetUser?.name || 'User'}
-          </Text>
-          {isTyping ? (
-            <Text style={styles.typingIndicator}>typing...</Text>
-          ) : targetUser?.isOnline ? (
-            <Text style={styles.activeStatus}>Active now</Text>
-          ) : null}
+    if (isGroup) {
+      displayName = conversation?.groupName || "Group Chat";
+      avatarUri = conversation?.groupAvatar || "https://via.placeholder.com/40";
+      subtitle = `${conversation?.participants?.length || 0} members`;
+    } else {
+      displayName = targetUser?.username || targetUser?.name || "User";
+      avatarUri = targetUser?.profile?.avatar || targetUser?.avatar || "https://via.placeholder.com/40";
+      if (isTyping) {
+        subtitle = "typing...";
+      } else if (targetUser?.isOnline) {
+        subtitle = "Active now";
+      }
+    }
+
+    return (
+      <View style={[styles.header, {
+        backgroundColor: isDark ? '#000' : '#FFF',
+        borderBottomColor: isDark ? '#262626' : '#DBDBDB'
+      }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="chevron-back" size={30} color={theme.colors.text} />
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.headerCenter} 
+          activeOpacity={0.7}
+          onPress={() => {
+            if (isGroup) {
+              navigation.navigate('GroupInfoScreen', { groupId: conversationId });
+            }
+          }}
+        >
+          <View style={styles.headerAvatarContainer}>
+            <Image
+              source={{ uri: avatarUri }}
+              style={styles.headerAvatar}
+            />
+            {isGroup && (
+              <View style={styles.groupHeaderBadge}>
+                <Ionicons name="people" size={10} color="#FFF" />
+              </View>
+            )}
+          </View>
+          <View style={styles.headerInfo}>
+            <Text style={[styles.headerName, { color: theme.colors.text }]}>
+              {displayName}
+            </Text>
+            {subtitle && (
+              <Text style={[
+                styles.headerSubtitle,
+                { color: isTyping ? '#0095F6' : theme.colors.textSecondary }
+              ]}>
+                {subtitle}
+              </Text>
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerBtn}>
+            <Ionicons name="call-outline" size={24} color={theme.colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerBtn}>
+            <Ionicons name="videocam-outline" size={26} color={theme.colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.headerBtn}
+            onPress={() => {
+              if (isGroup) {
+                navigation.navigate('GroupInfoScreen', { groupId: conversationId });
+              }
+            }}
+          >
+            <Ionicons name="information-circle-outline" size={26} color={theme.colors.text} />
+          </TouchableOpacity>
         </View>
-      </TouchableOpacity>
-
-      <View style={styles.headerActions}>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Ionicons name="call-outline" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Ionicons name="videocam-outline" size={26} color={theme.colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.headerBtn}>
-          <Ionicons name="information-circle-outline" size={26} color={theme.colors.text} />
-        </TouchableOpacity>
       </View>
-    </View>
-  );
+    );
+  };
 
   const renderMessage = ({ item, index }) => {
     const senderId = getUserId(item.sender);
@@ -436,6 +473,8 @@ const ChatScreen = ({ route, navigation }) => {
         isDark={isDark}
         targetUser={targetUser}
         currentUser={user}
+        isGroup={isGroup}
+        conversation={conversation}
       />
     );
   };
@@ -470,7 +509,9 @@ const ChatScreen = ({ route, navigation }) => {
             <Ionicons name="return-up-forward" size={16} color={theme.colors.textSecondary} />
             <View style={styles.replyTextContainer}>
               <Text style={[styles.replyName, { color: theme.colors.primary }]}>
-                {getUserId(replyTo.sender) === getMyId() ? 'You' : (targetUser?.username || 'User')}
+                {getUserId(replyTo.sender) === getMyId() 
+                  ? 'You' 
+                  : (replyTo.sender?.username || targetUser?.username || 'User')}
               </Text>
               <Text style={[styles.replyText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
                 {replyTo.content || 'Photo'}
@@ -536,7 +577,6 @@ const ChatScreen = ({ route, navigation }) => {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Message Actions Modal */}
       <Modal
         visible={showActions}
         transparent
@@ -571,10 +611,7 @@ const ChatScreen = ({ route, navigation }) => {
 
             <TouchableOpacity
               style={[styles.actionItem, { borderTopColor: isDark ? '#3A3A3A' : '#E0E0E0' }]}
-              onPress={() => {
-                // Copy functionality
-                setShowActions(false);
-              }}
+              onPress={() => setShowActions(false)}
             >
               <Ionicons name="copy-outline" size={20} color={theme.colors.text} />
               <Text style={[styles.actionText, { color: theme.colors.text }]}>Copy</Text>
@@ -593,14 +630,12 @@ const ChatScreen = ({ route, navigation }) => {
         </TouchableOpacity>
       </Modal>
 
-      {/* GIF Picker Modal */}
       <GifPickerModal
         visible={gifModalVisible}
         onClose={() => setGifModalVisible(false)}
         onSelectGif={handleGifSelect}
       />
 
-      {/* Full Screen Image Modal */}
       <Modal
         visible={!!fullScreenImage}
         transparent
@@ -628,8 +663,21 @@ const ChatScreen = ({ route, navigation }) => {
   );
 };
 
-// Swipeable Message Component
-const SwipeableMessage = ({ message, isMe, isLastInGroup, onSwipe, onLongPress, onImagePress, theme, isDark, targetUser, currentUser }) => {
+// ✅ Updated Swipeable Message Component with Group Support
+const SwipeableMessage = ({ 
+  message, 
+  isMe, 
+  isLastInGroup, 
+  onSwipe, 
+  onLongPress, 
+  onImagePress, 
+  theme, 
+  isDark, 
+  targetUser, 
+  currentUser,
+  isGroup,
+  conversation 
+}) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const replyIconOpacity = useRef(new Animated.Value(0)).current;
   const replyIconScale = useRef(new Animated.Value(0.5)).current;
@@ -686,6 +734,10 @@ const SwipeableMessage = ({ message, isMe, isLastInGroup, onSwipe, onLongPress, 
     hour: '2-digit',
     minute: '2-digit'
   });
+
+  // ✅ Show sender name in groups for others' messages
+  const showSenderName = isGroup && !isMe && message.type !== 'system';
+  const senderName = showSenderName ? (message.sender?.username || 'Unknown') : null;
 
   const renderReplyPreview = () => {
     if (!message.replyTo) return null;
@@ -744,6 +796,17 @@ const SwipeableMessage = ({ message, isMe, isLastInGroup, onSwipe, onLongPress, 
     }
   };
 
+  // ✅ System Message Rendering (for group events)
+  if (message.type === 'system') {
+    return (
+      <View style={styles.systemMessageContainer}>
+        <Text style={[styles.systemMessage, { color: theme.colors.textSecondary }]}>
+          {message.content}
+        </Text>
+      </View>
+    );
+  }
+
   const renderMessageContent = () => {
     if (message.isDeleted) {
       return (
@@ -774,50 +837,64 @@ const SwipeableMessage = ({ message, isMe, isLastInGroup, onSwipe, onLongPress, 
         const imageHeight = imageWidth / aspectRatio;
 
         return (
-          <TouchableOpacity onPress={onImagePress} activeOpacity={0.9}>
-            <View style={[
-              styles.imageBubble,
-              isLastInGroup && (isMe ? styles.bubbleLastMe : styles.bubbleLastThem)
-            ]}>
-              {renderReplyPreview()}
-              <Image
-                source={{ uri: message.content }}
-                style={[styles.messageImage, { width: imageWidth, height: Math.min(imageHeight, 350) }]}
-                resizeMode="cover"
-              />
-              <View style={styles.imageTimeOverlay}>
-                <Text style={styles.imageTime}>{messageTime}</Text>
-                {renderStatus()}
+          <View>
+            {showSenderName && (
+              <Text style={[styles.senderName, { color: theme.colors.primary }]}>
+                {senderName}
+              </Text>
+            )}
+            <TouchableOpacity onPress={onImagePress} activeOpacity={0.9}>
+              <View style={[
+                styles.imageBubble,
+                isLastInGroup && (isMe ? styles.bubbleLastMe : styles.bubbleLastThem)
+              ]}>
+                {renderReplyPreview()}
+                <Image
+                  source={{ uri: message.content }}
+                  style={[styles.messageImage, { width: imageWidth, height: Math.min(imageHeight, 350) }]}
+                  resizeMode="cover"
+                />
+                <View style={styles.imageTimeOverlay}>
+                  <Text style={styles.imageTime}>{messageTime}</Text>
+                  {renderStatus()}
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         );
 
       case 'text':
       default:
         return (
-          <View style={[
-            styles.textBubble,
-            isMe
-              ? [styles.bubbleMe, { backgroundColor: theme.colors.primary }]
-              : [styles.bubbleThem, { backgroundColor: isDark ? '#262626' : '#EFEFEF' }],
-            isLastInGroup && (isMe ? styles.bubbleLastMe : styles.bubbleLastThem)
-          ]}>
-            {renderReplyPreview()}
-            <Text style={[
-              styles.messageText,
-              { color: isMe ? '#FFF' : theme.colors.text }
-            ]}>
-              {message.content}
-            </Text>
-            <View style={styles.timeRow}>
-              <Text style={[
-                styles.timeText,
-                { color: isMe ? 'rgba(255,255,255,0.7)' : theme.colors.textSecondary }
-              ]}>
-                {messageTime}
+          <View>
+            {showSenderName && (
+              <Text style={[styles.senderName, { color: theme.colors.primary }]}>
+                {senderName}
               </Text>
-              {renderStatus()}
+            )}
+            <View style={[
+              styles.textBubble,
+              isMe
+                ? [styles.bubbleMe, { backgroundColor: theme.colors.primary }]
+                : [styles.bubbleThem, { backgroundColor: isDark ? '#262626' : '#EFEFEF' }],
+              isLastInGroup && (isMe ? styles.bubbleLastMe : styles.bubbleLastThem)
+            ]}>
+              {renderReplyPreview()}
+              <Text style={[
+                styles.messageText,
+                { color: isMe ? '#FFF' : theme.colors.text }
+              ]}>
+                {message.content}
+              </Text>
+              <View style={styles.timeRow}>
+                <Text style={[
+                  styles.timeText,
+                  { color: isMe ? 'rgba(255,255,255,0.7)' : theme.colors.textSecondary }
+                ]}>
+                  {messageTime}
+                </Text>
+                {renderStatus()}
+              </View>
             </View>
           </View>
         );
@@ -862,7 +939,6 @@ const SwipeableMessage = ({ message, isMe, isLastInGroup, onSwipe, onLongPress, 
 const styles = StyleSheet.create({
   container: { flex: 1 },
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -877,15 +953,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 4,
   },
+  headerAvatarContainer: {
+    position: 'relative',
+  },
   headerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
   },
+  groupHeaderBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#0095F6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+  },
   headerInfo: { marginLeft: 10 },
   headerName: {
     fontSize: 16,
     fontWeight: '600',
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   typingIndicator: {
     fontSize: 12,
@@ -903,7 +999,6 @@ const styles = StyleSheet.create({
   },
   headerBtn: { padding: 6 },
 
-  // Messages List
   messagesList: {
     paddingHorizontal: 10,
     paddingVertical: 12,
@@ -913,7 +1008,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  // Message Row
   messageRow: {
     marginBottom: 3,
     position: 'relative',
@@ -924,7 +1018,27 @@ const styles = StyleSheet.create({
     maxWidth: '75%',
   },
 
-  // Reply Icon
+  // ✅ System Message
+  systemMessageContainer: {
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  systemMessage: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    textAlign: 'center',
+  },
+
+  // ✅ Sender Name (for group chats)
+  senderName: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+    marginLeft: 12,
+  },
+
   replyIcon: {
     position: 'absolute',
     top: '50%',
@@ -933,7 +1047,6 @@ const styles = StyleSheet.create({
   replyIconMe: { left: 8 },
   replyIconThem: { right: 8 },
 
-  // Bubbles
   textBubble: {
     paddingHorizontal: 14,
     paddingVertical: 9,
@@ -952,7 +1065,6 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 20,
   },
 
-  // Text
   messageText: {
     fontSize: 15,
     lineHeight: 20,
@@ -972,7 +1084,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
 
-  // Image
   imageBubble: {
     borderRadius: 18,
     overflow: 'hidden',
@@ -996,7 +1107,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
 
-  // Reply Preview
   replyPreview: {
     paddingLeft: 10,
     paddingRight: 10,
@@ -1017,7 +1127,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Reactions
   reactionsContainer: {
     flexDirection: 'row',
     backgroundColor: '#FFF',
@@ -1038,7 +1147,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 2,
   },
 
-  // Reply Bar
   replyBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1065,7 +1173,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 
-  // Input
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1100,7 +1207,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
 
-  // Modal Actions
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
@@ -1135,7 +1241,6 @@ const styles = StyleSheet.create({
     marginLeft: 16,
   },
 
-  // Full Screen
   fullScreenContainer: {
     flex: 1,
     backgroundColor: 'black',

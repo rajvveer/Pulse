@@ -7,59 +7,104 @@ let socket = null;
 
 class SocketService {
   connect(token) {
-    if (socket?.connected) return;
+    if (socket?.connected) {
+      console.log('✅ Socket already connected');
+      return;
+    }
+
+    console.log('🔌 Connecting to socket...');
 
     socket = io(API_URL, {
       auth: { token },
       transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
     });
 
     socket.on('connect', () => console.log('✅ Connected to Socket.io:', socket.id));
     socket.on('disconnect', (reason) => console.log('⚠️ Socket disconnected:', reason));
+    socket.on('connect_error', (error) => console.error('❌ Connection error:', error.message));
   }
 
   disconnect() {
     if (socket) {
+      console.log('👋 Disconnecting socket');
       socket.disconnect();
       socket = null;
     }
   }
 
-  joinConversation(conversationId) {
-    if (socket) socket.emit('join_conversation', conversationId);
-  }
+  // ✅ GENERAL EMIT METHOD
+  emit(event, data, callback) {
+    if (!socket) {
+      console.error('❌ Socket not initialized');
+      return;
+    }
+    
+    if (!socket.connected) {
+      console.error('❌ Socket not connected');
+      return;
+    }
 
-  leaveConversation(conversationId) {
-    if (socket) socket.emit('leave_conversation', conversationId);
-  }
-
-  // ✅ UPDATED: Now accepts a 'callback'
-  sendMessage(payload, callback) {
-    if (socket) {
-        socket.emit('send_message', payload, callback);
+    console.log(`📤 Emitting: ${event}`, data);
+    
+    if (callback) {
+      socket.emit(event, data, callback);
+    } else {
+      socket.emit(event, data);
     }
   }
 
+  // ✅ GENERAL ON METHOD
+  on(event, callback) {
+    if (!socket) {
+      console.error('❌ Socket not initialized for event:', event);
+      return;
+    }
+    socket.on(event, callback);
+  }
+
+  // ✅ GENERAL OFF METHOD
+  off(event, callback) {
+    if (!socket) return;
+    if (callback) {
+      socket.off(event, callback);
+    } else {
+      socket.off(event);
+    }
+  }
+
+  joinConversation(conversationId) {
+    this.emit('join_conversation', { conversationId });
+  }
+
+  leaveConversation(conversationId) {
+    this.emit('leave_conversation', { conversationId });
+  }
+
+  sendMessage(payload, callback) {
+    this.emit('send_message', payload, callback);
+  }
+
   onNewMessage(callback) {
-    if (socket) socket.on('new_message', callback);
+    this.on('new_message', callback);
   }
 
   onTyping(callback) {
-    if (socket) socket.on('user_typing', callback);
+    this.on('user_typing', callback);
   }
 
   startTyping(conversationId) {
-    if (socket) socket.emit('typing_start', { conversationId });
+    this.emit('typing_start', { conversationId });
   }
 
   stopTyping(conversationId) {
-    if (socket) socket.emit('typing_stop', { conversationId });
+    this.emit('typing_stop', { conversationId });
   }
 
-  removeListener(eventName) {
-    if (socket) socket.off(eventName);
+  removeListener(eventName, callback) {
+    this.off(eventName, callback);
   }
   
   // Expose the socket instance getter
