@@ -1,4 +1,4 @@
-// screens/PostDetailScreen.js (FIXED - Instagram-style threading)
+// screens/PostDetailScreen.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -72,6 +72,18 @@ const PostDetailScreen = ({ route, navigation }) => {
     };
   }, [postId]);
 
+  // ✅ HELPER: Robust Author Logic (Extracts nested profile data)
+  const getAuthorDetails = (author) => {
+    if (!author) return { avatarUrl: null, displayName: 'Unknown', username: 'unknown' };
+    
+    // Check nested profile first, then root properties
+    const avatarUrl = author.profile?.avatar || author.avatar;
+    const displayName = author.profile?.displayName || author.name || author.username || 'Unknown';
+    const username = author.username || 'unknown';
+    
+    return { avatarUrl, displayName, username };
+  };
+
   // ✅ Auto-expand comments with replies
   const autoExpandComments = (commentsArray, expandedSet = new Set()) => {
     commentsArray.forEach(comment => {
@@ -92,8 +104,18 @@ const PostDetailScreen = ({ route, navigation }) => {
       ]);
       
       if (postRes.data.success) {
-        setPost(postRes.data.data);
-        setIsBookmarked(postRes.data.data.isBookmarked || false);
+        const fetchedPost = postRes.data.data;
+        
+        // 🔥 FIX FOR POST DETAIL CARD: 
+        // Manually flatten the author object so the Card (which we can't edit) sees the correct data
+        if (fetchedPost.author && fetchedPost.author.profile) {
+            fetchedPost.author.avatar = fetchedPost.author.profile.avatar || fetchedPost.author.avatar;
+            fetchedPost.author.displayName = fetchedPost.author.profile.displayName || fetchedPost.author.username;
+            fetchedPost.author.name = fetchedPost.author.profile.displayName || fetchedPost.author.name; // Fallback for name
+        }
+
+        setPost(fetchedPost);
+        setIsBookmarked(fetchedPost.isBookmarked || false);
       }
       
       if (commentRes.data.success) {
@@ -156,7 +178,8 @@ const PostDetailScreen = ({ route, navigation }) => {
 
   const handleReply = (comment) => {
     setReplyingTo(comment);
-    setCommentText(`@${comment.author?.username} `);
+    const { username } = getAuthorDetails(comment.author);
+    setCommentText(`@${username} `);
     inputRef.current?.focus();
   };
 
@@ -246,6 +269,9 @@ const PostDetailScreen = ({ route, navigation }) => {
     const isExpanded = expandedComments.has(comment._id);
     const isNested = level > 0;
     
+    // ✅ Use Helper to get correct Avatar/Name
+    const { avatarUrl, displayName } = getAuthorDetails(comment.author);
+    
     // ✅ Limit indentation to max 2 levels visually (like Instagram)
     const visualLevel = Math.min(level, 2);
     const marginLeft = visualLevel * 40; // 40px per level, max 2 levels
@@ -257,9 +283,10 @@ const PostDetailScreen = ({ route, navigation }) => {
           isNested && { marginLeft }
         ]}>
           <View style={styles.commentContent}>
-            {comment.author?.avatar ? (
+            {/* ✅ FIXED AVATAR */}
+            {avatarUrl ? (
               <Image 
-                source={{ uri: comment.author.avatar }} 
+                source={{ uri: avatarUrl }} 
                 style={[styles.commentAvatar, isNested && styles.replyAvatar]} 
               />
             ) : (
@@ -269,15 +296,16 @@ const PostDetailScreen = ({ route, navigation }) => {
                 { backgroundColor: theme.colors.primary }
               ]}>
                 <Text style={[styles.commentAvatarText, isNested && styles.replyAvatarText]}>
-                  {comment.author?.username?.charAt(0).toUpperCase() || '?'}
+                  {displayName?.charAt(0).toUpperCase() || '?'}
                 </Text>
               </View>
             )}
 
             <View style={styles.commentBody}>
               <View style={styles.commentHeader}>
+                {/* ✅ FIXED NAME */}
                 <Text style={[styles.commentUsername, { color: theme.colors.text }]}>
-                  {comment.author?.username || 'Anonymous'}
+                  {displayName}
                 </Text>
                 {comment.author?.isVerified && (
                   <Ionicons 
@@ -407,6 +435,9 @@ const PostDetailScreen = ({ route, navigation }) => {
     </View>
   );
 
+  // ✅ Get Current User Details for Input using helper
+  const currentUserDetails = getAuthorDetails(user);
+
   if (isLoading) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.colors.background }]}>
@@ -490,8 +521,9 @@ const PostDetailScreen = ({ route, navigation }) => {
                 <Text style={[styles.replyingToText, { color: theme.colors.textSecondary }]}>
                   Replying to
                 </Text>
+                {/* ✅ FIXED: Use helper for reply username */}
                 <Text style={[styles.replyingToName, { color: theme.colors.text }]} numberOfLines={1}>
-                  @{replyingTo.author?.username}
+                  @{getAuthorDetails(replyingTo.author).username}
                 </Text>
               </View>
               <TouchableOpacity onPress={cancelReply} style={styles.cancelReplyButton}>
@@ -514,12 +546,13 @@ const PostDetailScreen = ({ route, navigation }) => {
           )}
 
           <View style={[styles.inputContainer, { backgroundColor: isDark ? '#2A2A2A' : '#F2F3F5' }]}>
-            {user?.avatar ? (
-              <Image source={{ uri: user.avatar }} style={styles.inputAvatar} />
+            {/* ✅ FIXED: Input Avatar using helper */}
+            {currentUserDetails.avatarUrl ? (
+              <Image source={{ uri: currentUserDetails.avatarUrl }} style={styles.inputAvatar} />
             ) : (
               <View style={[styles.inputAvatar, { backgroundColor: theme.colors.primary }]}>
                 <Text style={styles.inputAvatarText}>
-                  {user?.username?.charAt(0).toUpperCase() || 'U'}
+                  {currentUserDetails.displayName?.charAt(0).toUpperCase() || 'U'}
                 </Text>
               </View>
             )}
@@ -527,7 +560,7 @@ const PostDetailScreen = ({ route, navigation }) => {
             <TextInput
               ref={inputRef}
               style={[styles.input, { color: theme.colors.text }]}
-              placeholder={replyingTo ? `Reply to @${replyingTo.author?.username}...` : "Add a thoughtful comment..."}
+              placeholder={replyingTo ? `Reply to @${getAuthorDetails(replyingTo.author).username}...` : "Add a thoughtful comment..."}
               placeholderTextColor={theme.colors.textSecondary}
               value={commentText}
               onChangeText={setCommentText}

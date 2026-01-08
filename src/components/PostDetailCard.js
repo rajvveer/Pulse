@@ -1,4 +1,4 @@
-// components/PostDetailCard.js (Enhanced with animations)
+// components/PostDetailCard.js (FIXED - Robust Author Data)
 import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { 
   View, 
@@ -32,9 +32,23 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
   const mediaItems = post.content?.media?.filter(item => item?.url) || [];
   const hasMultipleImages = mediaItems.length > 1;
 
+  // ✅ HELPER: Extract Author Details Robustly
+  // This handles both structures: author.avatar OR author.profile.avatar
+  const getAuthorDetails = (author) => {
+    if (!author) return { avatarUrl: null, displayName: 'Unknown', username: 'unknown' };
+    
+    const avatarUrl = author.profile?.avatar || author.avatar;
+    const displayName = author.profile?.displayName || author.name || author.username || 'Unknown';
+    const username = author.username || 'unknown';
+    
+    return { avatarUrl, displayName, username };
+  };
+
+  const { avatarUrl, displayName, username } = getAuthorDetails(post.author);
+
   const handleUserPress = () => {
-    if (!post.isAnonymous && post.author?.username) {
-      navigation.navigate('UserProfile', { username: post.author.username });
+    if (!post.isAnonymous && username !== 'unknown') {
+      navigation.navigate('UserProfile', { username: username });
     }
   };
 
@@ -104,26 +118,28 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
           onPress={handleUserPress}
           disabled={post.isAnonymous}
         >
-          {post.author?.avatar ? (
-            <Image source={{ uri: post.author.avatar }} style={styles.avatar} />
+          {/* ✅ FIXED: Use extracted avatarUrl */}
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
               <Text style={styles.avatarText}>
-                {post.author?.username?.charAt(0).toUpperCase() || '?'}
+                {displayName.charAt(0).toUpperCase()}
               </Text>
             </View>
           )}
           <View style={styles.userDetails}>
             <View style={styles.nameRow}>
+              {/* ✅ FIXED: Use extracted displayName */}
               <Text style={[styles.username, { color: theme.colors.text }]}>
-                {post.author?.name || post.author?.username || 'Anonymous'}
+                {post.isAnonymous ? 'Anonymous' : displayName}
               </Text>
               {post.author?.isVerified && (
                 <Ionicons name="checkmark-circle" size={14} color={theme.colors.primary} style={{ marginLeft: 4 }}/>
               )}
             </View>
             <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
-               {timeAgo} • {post.isAnonymous ? 'Anonymous' : `@${post.author?.username}`}
+               {timeAgo} • {post.isAnonymous ? 'Anonymous' : `@${username}`}
             </Text>
           </View>
         </Pressable>
@@ -140,7 +156,7 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
         </Text>
       )}
 
-      {/* IMAGE SLIDER - KEEPING YOUR WORKING LOGIC */}
+      {/* IMAGE SLIDER */}
       {mediaItems.length > 0 && (
         <View style={styles.mediaWrapper}>
           <FlatList
