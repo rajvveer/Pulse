@@ -6,11 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+
+    "jsEngine": "hermes",                     
+    "newArchEnabled": true,                  
+
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#1E88E5"
     },
+
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -19,6 +24,7 @@
         "NSMicrophoneUsageDescription": "Pulse needs microphone access for video posts."
       }
     },
+
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -33,9 +39,11 @@
       "softwareKeyboardLayoutMode": "resize",
       "package": "com.rajveer69699.pulsefrontend"
     },
+
     "web": {
       "favicon": "./assets/favicon.png"
     },
+
     "extra": {
       "eas": {
         "projectId": "9e305855-a5a5-4744-b8ab-7a35789cb4da"
