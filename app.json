@@ -28,19 +28,18 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
-        "RECORD_AUDIO",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "RECORD_AUDIO"
       ],
       "softwareKeyboardLayoutMode": "resize",
-      "//": "👇 ADD THIS BLOCK TO FIX NAV BAR COLLISION 👇",
-      "androidNavigationBar": {
-        "backgroundColor": "#ffffff",
-        "barStyle": "dark-content"
-      }
+      "package": "com.rajveer69699.pulsefrontend"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9e305855-a5a5-4744-b8ab-7a35789cb4da"
+      }
     }
   }
 }
