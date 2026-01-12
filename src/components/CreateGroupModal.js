@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -10,36 +10,86 @@ import {
   Image,
   ActivityIndicator,
   Alert,
-  Dimensions,
-} from 'react-native';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import * as ImagePicker from 'expo-image-picker';
-import { useTheme } from '../contexts/ThemeContext';
-import { getTheme } from '../styles/theme';
-import api from '../services/api';
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+} from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as ImagePicker from "expo-image-picker";
+import { useTheme } from "../contexts/ThemeContext";
+import { getTheme } from "../styles/theme";
+import api from "../services/api";
 
-const { width } = Dimensions.get('window');
+// ✅ EXTRACTED COMPONENT: Prevents re-creation on every parent render
+const UserListItem = React.memo(({ item, isSelected, theme, onToggle }) => (
+  <TouchableOpacity
+    style={[styles.userItem, { backgroundColor: theme.colors.background }]}
+    onPress={() => onToggle(item)}
+  >
+    <Image
+      source={{
+        uri:
+          item.profile?.avatar ||
+          item.avatar ||
+          "https://via.placeholder.com/40",
+      }}
+      style={styles.userAvatar}
+    />
+    <View style={styles.userInfo}>
+      <Text style={[styles.userName, { color: theme.colors.text }]}>
+        {item.username}
+      </Text>
+      {item.name && (
+        <Text
+          style={[styles.userFullName, { color: theme.colors.textSecondary }]}
+        >
+          {item.name}
+        </Text>
+      )}
+    </View>
+    <View
+      style={[
+        styles.checkbox,
+        { borderColor: theme.colors.border },
+        isSelected && {
+          backgroundColor: theme.colors.primary,
+          borderColor: theme.colors.primary,
+        },
+      ]}
+    >
+      {isSelected && <Ionicons name="checkmark" size={16} color="#FFF" />}
+    </View>
+  </TouchableOpacity>
+));
 
 const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
   const [step, setStep] = useState(1);
-  const [groupName, setGroupName] = useState('');
+  const [groupName, setGroupName] = useState("");
   const [groupAvatar, setGroupAvatar] = useState(null);
   const [selectedUsers, setSelectedUsers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const searchUsers = async (query) => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      return;
-    }
+  // ✅ DEBOUNCE SEARCH: Prevents API spam
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim()) {
+        performSearch(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 500); // 500ms delay
 
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const performSearch = async (query) => {
     setLoading(true);
     try {
       const res = await api.get(`/users/search?q=${query}`);
@@ -47,19 +97,19 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
         setSearchResults(res.data.data);
       }
     } catch (error) {
-      console.error('Search error:', error);
+      console.error("Search error:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleUser = (user) => {
-    if (selectedUsers.find(u => u._id === user._id)) {
-      setSelectedUsers(selectedUsers.filter(u => u._id !== user._id));
-    } else {
-      setSelectedUsers([...selectedUsers, user]);
-    }
-  };
+  const toggleUser = useCallback((user) => {
+    setSelectedUsers((prev) => {
+      const exists = prev.find((u) => u._id === user._id);
+      if (exists) return prev.filter((u) => u._id !== user._id);
+      return [...prev, user];
+    });
+  }, []);
 
   const pickGroupAvatar = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -72,25 +122,22 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
     if (!result.canceled) {
       const asset = result.assets[0];
       setUploading(true);
-
       const formData = new FormData();
-      formData.append('file', {
+      formData.append("file", {
         uri: asset.uri,
-        type: 'image/jpeg',
-        name: 'group.jpg'
+        type: "image/jpeg",
+        name: "group.jpg",
       });
 
       try {
-        const res = await api.post('/media/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+        const res = await api.post("/media/upload", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
         });
-
         if (res.data.success) {
           setGroupAvatar(res.data.data.url);
         }
       } catch (err) {
-        console.error("Upload failed", err);
-        Alert.alert('Error', 'Failed to upload image');
+        Alert.alert("Error", "Failed to upload image");
       } finally {
         setUploading(false);
       }
@@ -99,21 +146,20 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
 
   const createGroup = async () => {
     if (!groupName.trim()) {
-      Alert.alert('Error', 'Please enter a group name');
+      Alert.alert("Error", "Please enter a group name");
       return;
     }
-
     if (selectedUsers.length < 2) {
-      Alert.alert('Error', 'Select at least 2 members');
+      Alert.alert("Error", "Select at least 2 members");
       return;
     }
 
     setCreating(true);
     try {
-      const res = await api.post('/groups', {
+      const res = await api.post("/groups", {
         groupName: groupName.trim(),
-        participants: selectedUsers.map(u => u._id),
-        groupAvatar: groupAvatar
+        participants: selectedUsers.map((u) => u._id),
+        groupAvatar: groupAvatar,
       });
 
       if (res.data.success) {
@@ -121,8 +167,10 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
         handleClose();
       }
     } catch (error) {
-      console.error('Create group error:', error);
-      Alert.alert('Error', error.response?.data?.message || 'Failed to create group');
+      Alert.alert(
+        "Error",
+        error.response?.data?.message || "Failed to create group"
+      );
     } finally {
       setCreating(false);
     }
@@ -130,46 +178,29 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
 
   const handleClose = () => {
     setStep(1);
-    setGroupName('');
+    setGroupName("");
     setGroupAvatar(null);
     setSelectedUsers([]);
-    setSearchQuery('');
+    setSearchQuery("");
     setSearchResults([]);
     onClose();
   };
 
-  const renderUserItem = ({ item }) => {
-    const isSelected = selectedUsers.find(u => u._id === item._id);
-    
-    return (
-      <TouchableOpacity
-        style={[styles.userItem, { backgroundColor: theme.colors.background }]}
-        onPress={() => toggleUser(item)}
-      >
-        <Image
-          source={{ uri: item.profile?.avatar || item.avatar || 'https://via.placeholder.com/40' }}
-          style={styles.userAvatar}
+  // ✅ MEMOIZED RENDER FUNCTIONS
+  const renderUserItem = useCallback(
+    ({ item }) => {
+      const isSelected = selectedUsers.some((u) => u._id === item._id);
+      return (
+        <UserListItem
+          item={item}
+          isSelected={isSelected}
+          theme={theme}
+          onToggle={toggleUser}
         />
-        <View style={styles.userInfo}>
-          <Text style={[styles.userName, { color: theme.colors.text }]}>
-            {item.username}
-          </Text>
-          {item.name && (
-            <Text style={[styles.userFullName, { color: theme.colors.textSecondary }]}>
-              {item.name}
-            </Text>
-          )}
-        </View>
-        <View style={[
-          styles.checkbox,
-          { borderColor: theme.colors.border },
-          isSelected && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
-        ]}>
-          {isSelected && <Ionicons name="checkmark" size={16} color="#FFF" />}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+      );
+    },
+    [selectedUsers, theme, toggleUser]
+  );
 
   return (
     <Modal
@@ -178,24 +209,40 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
       presentationStyle="pageSheet"
       onRequestClose={handleClose}
     >
-      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* ✅ KEYBOARD AVOIDING VIEW: Fixes input hiding issues */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
         {/* Header */}
-        <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity onPress={handleClose}>
+        <View
+          style={[styles.header, { borderBottomColor: theme.colors.border }]}
+        >
+          <TouchableOpacity
+            onPress={handleClose}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Ionicons name="close" size={28} color={theme.colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-            {step === 1 ? 'Add Members' : 'New Group'}
+            {step === 1 ? "Add Members" : "New Group"}
           </Text>
           {step === 1 ? (
             <TouchableOpacity
               onPress={() => selectedUsers.length >= 2 && setStep(2)}
               disabled={selectedUsers.length < 2}
             >
-              <Text style={[
-                styles.nextBtn,
-                { color: selectedUsers.length >= 2 ? theme.colors.primary : theme.colors.textSecondary }
-              ]}>
+              <Text
+                style={[
+                  styles.nextBtn,
+                  {
+                    color:
+                      selectedUsers.length >= 2
+                        ? theme.colors.primary
+                        : theme.colors.textSecondary,
+                  },
+                ]}
+              >
                 Next
               </Text>
             </TouchableOpacity>
@@ -214,70 +261,117 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
 
         {step === 1 ? (
           <>
-            {/* Selected Count */}
-            {selectedUsers.length > 0 && (
-              <View style={styles.selectedCount}>
-                <Text style={[styles.countText, { color: theme.colors.text }]}>
-                  {selectedUsers.length} selected
-                </Text>
-              </View>
-            )}
+            {/* Selected Count & Chips */}
+            <View>
+              {selectedUsers.length > 0 && (
+                <View style={styles.selectedContainer}>
+                  <Text
+                    style={[
+                      styles.countText,
+                      {
+                        color: theme.colors.text,
+                        marginBottom: 8,
+                        paddingHorizontal: 16,
+                      },
+                    ]}
+                  >
+                    {selectedUsers.length} selected
+                  </Text>
+                  <FlatList
+                    horizontal
+                    data={selectedUsers}
+                    keyExtractor={(item) => item._id}
+                    renderItem={({ item }) => (
+                      <View
+                        style={[
+                          styles.selectedChip,
+                          { backgroundColor: isDark ? "#262626" : "#F0F0F0" },
+                        ]}
+                      >
+                        <Image
+                          source={{
+                            uri:
+                              item.profile?.avatar ||
+                              item.avatar ||
+                              "https://via.placeholder.com/24",
+                          }}
+                          style={styles.chipAvatar}
+                        />
+                        <Text
+                          style={[
+                            styles.chipText,
+                            { color: theme.colors.text },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {item.username}
+                        </Text>
+                        <TouchableOpacity onPress={() => toggleUser(item)}>
+                          <Ionicons
+                            name="close-circle"
+                            size={18}
+                            color={theme.colors.textSecondary}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.chipsList}
+                  />
+                </View>
+              )}
 
-            {/* Selected Users Chips */}
-            {selectedUsers.length > 0 && (
-              <View style={styles.selectedContainer}>
-                <FlatList
-                  horizontal
-                  data={selectedUsers}
-                  keyExtractor={(item) => item._id}
-                  renderItem={({ item }) => (
-                    <View style={[styles.selectedChip, { backgroundColor: isDark ? '#262626' : '#F0F0F0' }]}>
-                      <Image
-                        source={{ uri: item.profile?.avatar || item.avatar || 'https://via.placeholder.com/24' }}
-                        style={styles.chipAvatar}
-                      />
-                      <Text style={[styles.chipText, { color: theme.colors.text }]} numberOfLines={1}>
-                        {item.username}
-                      </Text>
-                      <TouchableOpacity onPress={() => toggleUser(item)}>
-                        <Ionicons name="close-circle" size={18} color={theme.colors.textSecondary} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chipsList}
+              {/* Search */}
+              <View
+                style={[
+                  styles.searchContainer,
+                  { backgroundColor: isDark ? "#262626" : "#F0F0F0" },
+                ]}
+              >
+                <Ionicons
+                  name="search"
+                  size={20}
+                  color={theme.colors.textSecondary}
+                />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.colors.text }]}
+                  placeholder="Search users..."
+                  placeholderTextColor={theme.colors.textSecondary}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery} // Updates state only, useEffect handles API
                 />
               </View>
-            )}
-
-            {/* Search */}
-            <View style={[styles.searchContainer, { backgroundColor: isDark ? '#262626' : '#F0F0F0' }]}>
-              <Ionicons name="search" size={20} color={theme.colors.textSecondary} />
-              <TextInput
-                style={[styles.searchInput, { color: theme.colors.text }]}
-                placeholder="Search users..."
-                placeholderTextColor={theme.colors.textSecondary}
-                value={searchQuery}
-                onChangeText={(text) => {
-                  setSearchQuery(text);
-                  searchUsers(text);
-                }}
-              />
             </View>
 
             {/* User List */}
             {loading ? (
-              <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 50 }} />
+              <ActivityIndicator
+                size="large"
+                color={theme.colors.primary}
+                style={{ marginTop: 50 }}
+              />
             ) : (
               <FlatList
                 data={searchResults}
                 renderItem={renderUserItem}
                 keyExtractor={(item) => item._id}
+                keyboardShouldPersistTaps="handled"
                 ListEmptyComponent={
                   <View style={styles.emptyState}>
-                    <Ionicons name="people-outline" size={64} color={theme.colors.textSecondary} />
-                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-                      {searchQuery ? 'No users found' : 'Search for users to add'}
+                    <Ionicons
+                      name="people-outline"
+                      size={64}
+                      color={theme.colors.textSecondary}
+                    />
+                    <Text
+                      style={[
+                        styles.emptyText,
+                        { color: theme.colors.textSecondary },
+                      ]}
+                    >
+                      {searchQuery
+                        ? "No users found"
+                        : "Search for users to add"}
                     </Text>
                   </View>
                 }
@@ -285,31 +379,57 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
             )}
           </>
         ) : (
-          <View style={styles.detailsContainer}>
+          // ✅ STEP 2: Wrapped in ScrollView to allow scrolling if list is long
+          <ScrollView
+            contentContainerStyle={styles.detailsScroll}
+            keyboardShouldPersistTaps="handled"
+          >
             {/* Group Avatar */}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.avatarSection}
               onPress={pickGroupAvatar}
               disabled={uploading}
             >
               {groupAvatar ? (
-                <Image source={{ uri: groupAvatar }} style={styles.groupAvatarImage} />
+                <Image
+                  source={{ uri: groupAvatar }}
+                  style={styles.groupAvatarImage}
+                />
               ) : (
-                <View style={[styles.avatarPlaceholder, { backgroundColor: isDark ? '#262626' : '#F0F0F0' }]}>
+                <View
+                  style={[
+                    styles.avatarPlaceholder,
+                    { backgroundColor: isDark ? "#262626" : "#F0F0F0" },
+                  ]}
+                >
                   {uploading ? (
-                    <ActivityIndicator size="small" color={theme.colors.primary} />
+                    <ActivityIndicator
+                      size="small"
+                      color={theme.colors.primary}
+                    />
                   ) : (
-                    <Ionicons name="camera" size={32} color={theme.colors.textSecondary} />
+                    <Ionicons
+                      name="camera"
+                      size={32}
+                      color={theme.colors.textSecondary}
+                    />
                   )}
                 </View>
               )}
-              <Text style={[styles.avatarHint, { color: theme.colors.primary }]}>
-                {groupAvatar ? 'Change photo' : 'Add group photo'}
+              <Text
+                style={[styles.avatarHint, { color: theme.colors.primary }]}
+              >
+                {groupAvatar ? "Change photo" : "Add group photo"}
               </Text>
             </TouchableOpacity>
 
             {/* Group Name Input */}
-            <View style={[styles.inputGroup, { backgroundColor: isDark ? '#262626' : '#F0F0F0' }]}>
+            <View
+              style={[
+                styles.inputGroup,
+                { backgroundColor: isDark ? "#262626" : "#F0F0F0" },
+              ]}
+            >
               <TextInput
                 style={[styles.groupInput, { color: theme.colors.text }]}
                 placeholder="Group Name (required)"
@@ -325,150 +445,120 @@ const CreateGroupModal = ({ visible, onClose, onGroupCreated }) => {
               <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>
                 Participants: {selectedUsers.length}
               </Text>
-              <FlatList
-                data={selectedUsers}
-                renderItem={({ item }) => (
-                  <View style={[styles.memberItem, { backgroundColor: isDark ? '#262626' : '#F0F0F0' }]}>
-                    <Image
-                      source={{ uri: item.profile?.avatar || item.avatar || 'https://via.placeholder.com/36' }}
-                      style={styles.memberAvatar}
-                    />
-                    <Text style={[styles.memberName, { color: theme.colors.text }]}>
-                      {item.username}
-                    </Text>
-                  </View>
-                )}
-                keyExtractor={(item) => item._id}
-                scrollEnabled={false}
-              />
+              {/* Using Map instead of FlatList inside ScrollView for better performance */}
+              {selectedUsers.map((item) => (
+                <View
+                  key={item._id}
+                  style={[
+                    styles.memberItem,
+                    { backgroundColor: isDark ? "#262626" : "#F0F0F0" },
+                  ]}
+                >
+                  <Image
+                    source={{
+                      uri:
+                        item.profile?.avatar ||
+                        item.avatar ||
+                        "https://via.placeholder.com/36",
+                    }}
+                    style={styles.memberAvatar}
+                  />
+                  <Text
+                    style={[styles.memberName, { color: theme.colors.text }]}
+                  >
+                    {item.username}
+                  </Text>
+                </View>
+              ))}
             </View>
-          </View>
+          </ScrollView>
         )}
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderBottomWidth: 1,
   },
-  headerTitle: { fontSize: 20, fontWeight: '700' },
-  nextBtn: { fontSize: 16, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: "700" },
+  nextBtn: { fontSize: 16, fontWeight: "600" },
 
-  selectedCount: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  countText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
+  // Selected Area
   selectedContainer: {
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: "rgba(0,0,0,0.05)",
   },
-  chipsList: {
-    paddingHorizontal: 16,
-    gap: 8,
-  },
+  countText: { fontSize: 14, fontWeight: "600" },
+  chipsList: { paddingHorizontal: 16, gap: 8 },
   selectedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 6,
     paddingLeft: 6,
     paddingRight: 10,
     borderRadius: 20,
     gap: 6,
   },
-  chipAvatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-  },
-  chipText: {
-    fontSize: 14,
-    maxWidth: 80,
-  },
+  chipAvatar: { width: 24, height: 24, borderRadius: 12 },
+  chipText: { fontSize: 14, maxWidth: 100 },
 
+  // Search
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     margin: 16,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 12,
     gap: 10,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-  },
+  searchInput: { flex: 1, fontSize: 16, padding: 0 },
 
+  // User Item
   userItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  userAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-  },
-  userInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  userName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  userFullName: {
-    fontSize: 14,
-    marginTop: 2,
-  },
+  userAvatar: { width: 44, height: 44, borderRadius: 22 },
+  userInfo: { flex: 1, marginLeft: 12 },
+  userName: { fontSize: 16, fontWeight: "600" },
+  userFullName: { fontSize: 14, marginTop: 2 },
   checkbox: {
     width: 24,
     height: 24,
     borderRadius: 12,
     borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
 
   emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingTop: 80,
   },
-  emptyText: {
-    fontSize: 16,
-    marginTop: 16,
-  },
+  emptyText: { fontSize: 16, marginTop: 16 },
 
-  detailsContainer: {
-    padding: 16,
-  },
-  avatarSection: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
+  // Step 2
+  detailsScroll: { padding: 16 },
+  avatarSection: { alignItems: "center", marginBottom: 24 },
   avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 12,
   },
   groupAvatarImage: {
@@ -477,47 +567,21 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     marginBottom: 12,
   },
-  avatarHint: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  inputGroup: {
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  groupInput: {
-    fontSize: 16,
-    paddingVertical: 14,
-  },
-
-  membersSection: {
-    marginTop: 8,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 12,
-  },
+  avatarHint: { fontSize: 14, fontWeight: "600" },
+  inputGroup: { borderRadius: 12, paddingHorizontal: 16, marginBottom: 24 },
+  groupInput: { fontSize: 16, paddingVertical: 14 },
+  membersSection: { marginTop: 8 },
+  sectionTitle: { fontSize: 16, fontWeight: "700", marginBottom: 12 },
   memberItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
     marginBottom: 8,
   },
-  memberAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-  },
-  memberName: {
-    fontSize: 15,
-    marginLeft: 12,
-    fontWeight: '500',
-  },
+  memberAvatar: { width: 36, height: 36, borderRadius: 18 },
+  memberName: { fontSize: 15, marginLeft: 12, fontWeight: "500" },
 });
 
 export default CreateGroupModal;

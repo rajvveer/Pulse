@@ -1,21 +1,40 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Platform, Animated, ScrollView } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import api from '../services/api';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  KeyboardAvoidingView,
+  Platform,
+  Animated,
+  ScrollView,
+  Keyboard,
+} from "react-native";
+import { Video, ResizeMode } from "expo-av";
+import * as ImagePicker from "expo-image-picker";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useIsFocused } from "@react-navigation/native"; // ✅ Import this
+import api from "../services/api";
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 
 const CreateReelScreen = ({ navigation }) => {
+  const isFocused = useIsFocused(); // ✅ Detect if screen is active
   const [videoUri, setVideoUri] = useState(null);
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState("");
   const [uploading, setUploading] = useState(false);
   const [showCaptionInput, setShowCaptionInput] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
+
   const insets = useSafeAreaInsets();
   const videoRef = useRef(null);
+
+  // Animations
   const slideAnim = useRef(new Animated.Value(height)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -34,21 +53,35 @@ const CreateReelScreen = ({ navigation }) => {
           useNativeDriver: true,
         }),
       ]).start();
+    } else {
+      // Reset animations when closing
+      Keyboard.dismiss();
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.spring(slideAnim, { toValue: height, useNativeDriver: true }),
+      ]).start();
     }
   }, [showCaptionInput]);
 
   const pickVideo = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'We need camera roll permissions to select videos.');
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "We need camera roll permissions to select videos."
+      );
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: true,
-      quality: 1,
-      videoMaxDuration: 90, // 90 seconds limit
+      quality: 0.8, // ✅ Reduced slightly for faster uploads
+      videoMaxDuration: 60,
     });
 
     if (!result.canceled) {
@@ -59,16 +92,19 @@ const CreateReelScreen = ({ navigation }) => {
 
   const recordVideo = async () => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'We need camera permissions to record videos.');
+    if (status !== "granted") {
+      Alert.alert(
+        "Permission Denied",
+        "We need camera permissions to record videos."
+      );
       return;
     }
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Videos,
       allowsEditing: true,
-      quality: 1,
-      videoMaxDuration: 90,
+      quality: 0.8,
+      videoMaxDuration: 60,
     });
 
     if (!result.canceled) {
@@ -86,24 +122,31 @@ const CreateReelScreen = ({ navigation }) => {
     setUploading(true);
 
     try {
+      // ✅ FIX: Robust File Name & Type Logic
+      // This prevents "Stream Closed" errors on backend for .mov files
+      const filename = videoUri.split("/").pop();
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `video/${match[1]}` : `video/mp4`;
+
       const formData = new FormData();
-      formData.append('file', {
+      formData.append("file", {
         uri: videoUri,
-        type: 'video/mp4',
-        name: `reel_${Date.now()}.mp4`,
+        name: filename,
+        type: type,
       });
-      formData.append('caption', caption);
+      formData.append("caption", caption);
+      // formData.append('duration', videoDuration); // Optional: Send duration if backend needs it
 
-      await api.post('/reels/create', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      await api.post("/reels/create", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
       });
 
-      Alert.alert('Success', 'Your reel has been shared!', [
-        { text: 'OK', onPress: () => navigation.goBack() }
+      Alert.alert("Success", "Your reel is being processed!", [
+        { text: "OK", onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Failed to upload reel. Please try again.');
+      Alert.alert("Error", "Failed to upload reel. Please try again.");
     } finally {
       setUploading(false);
     }
@@ -112,23 +155,24 @@ const CreateReelScreen = ({ navigation }) => {
   const formatDuration = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // Empty State - Video Selection
+  // --- EMPTY STATE ---
   if (!videoUri) {
     return (
       <View style={styles.emptyContainer}>
-        {/* Header */}
         <View style={[styles.emptyHeader, { paddingTop: insets.top + 10 }]}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.headerBtn}
+          >
             <Ionicons name="close" size={28} color="#fff" />
           </TouchableOpacity>
           <Text style={styles.emptyHeaderTitle}>Create Reel</Text>
           <View style={styles.headerBtn} />
         </View>
 
-        {/* Main Content */}
         <View style={styles.emptyContent}>
           <View style={styles.iconCircle}>
             <Ionicons name="film" size={60} color="#FF3B5C" />
@@ -138,7 +182,6 @@ const CreateReelScreen = ({ navigation }) => {
             Share a fun video with your followers
           </Text>
 
-          {/* Action Buttons */}
           <TouchableOpacity style={styles.primaryButton} onPress={recordVideo}>
             <Ionicons name="videocam" size={24} color="#fff" />
             <Text style={styles.primaryButtonText}>Record Video</Text>
@@ -150,18 +193,24 @@ const CreateReelScreen = ({ navigation }) => {
           </TouchableOpacity>
 
           <View style={styles.tipContainer}>
-            <Ionicons name="information-circle-outline" size={20} color="#999" />
-            <Text style={styles.tipText}>Videos can be up to 90 seconds long</Text>
+            <Ionicons
+              name="information-circle-outline"
+              size={20}
+              color="#999"
+            />
+            <Text style={styles.tipText}>
+              Videos can be up to 60 seconds long
+            </Text>
           </View>
         </View>
       </View>
     );
   }
 
-  // Video Preview State
+  // --- PREVIEW STATE ---
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
       <Video
@@ -170,7 +219,8 @@ const CreateReelScreen = ({ navigation }) => {
         source={{ uri: videoUri }}
         resizeMode={ResizeMode.COVER}
         isLooping
-        shouldPlay
+        // ✅ UX FIX: Pause video if user is typing caption OR left the screen
+        shouldPlay={!showCaptionInput && isFocused}
         isMuted={false}
       />
 
@@ -178,13 +228,13 @@ const CreateReelScreen = ({ navigation }) => {
       <View style={[styles.overlay, { paddingTop: insets.top }]}>
         {/* Top Header */}
         <View style={styles.header}>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => {
               if (showCaptionInput) {
                 setShowCaptionInput(false);
               } else {
                 setVideoUri(null);
-                setCaption('');
+                setCaption("");
               }
             }}
             style={styles.backButton}
@@ -195,7 +245,9 @@ const CreateReelScreen = ({ navigation }) => {
           {videoDuration > 0 && (
             <View style={styles.durationBadge}>
               <Ionicons name="time-outline" size={16} color="#fff" />
-              <Text style={styles.durationText}>{formatDuration(videoDuration / 1000)}</Text>
+              <Text style={styles.durationText}>
+                {formatDuration(videoDuration / 1000)}
+              </Text>
             </View>
           )}
 
@@ -204,10 +256,13 @@ const CreateReelScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom Controls */}
-        {!showCaptionInput ? (
+        {/* Bottom Controls (Hidden when modal is open) */}
+        {!showCaptionInput && (
           <View style={styles.bottomControls}>
-            <TouchableOpacity style={styles.controlButton} onPress={() => setVideoUri(null)}>
+            <TouchableOpacity
+              style={styles.controlButton}
+              onPress={() => setVideoUri(null)}
+            >
               <Ionicons name="refresh" size={24} color="#fff" />
               <Text style={styles.controlText}>Retake</Text>
             </TouchableOpacity>
@@ -217,307 +272,271 @@ const CreateReelScreen = ({ navigation }) => {
               <Ionicons name="chevron-forward" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
-        ) : null}
+        )}
       </View>
 
       {/* Caption Input Modal */}
-      {showCaptionInput && (
-        <Animated.View 
-          style={[
-            styles.captionModal,
-            { 
-              transform: [{ translateY: slideAnim }],
-              opacity: fadeAnim,
-            }
-          ]}
+      <Animated.View
+        style={[
+          styles.captionModal,
+          {
+            transform: [{ translateY: slideAnim }],
+            opacity: fadeAnim,
+          },
+        ]}
+      >
+        <View style={styles.modalHandle} />
+
+        <View style={styles.modalHeader}>
+          <Text style={styles.modalTitle}>Add Details</Text>
+          {/* Close button for modal */}
+          <TouchableOpacity onPress={() => setShowCaptionInput(false)}>
+            <Ionicons name="close-circle" size={24} color="#ccc" />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.modalContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.modalHandle} />
-          
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Add Details</Text>
+          {/* Caption Input */}
+          <View style={styles.inputSection}>
+            <Text style={styles.inputLabel}>Caption</Text>
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Write a caption..."
+              placeholderTextColor="#999"
+              value={caption}
+              onChangeText={setCaption}
+              maxLength={2200}
+              multiline
+              // No autoFocus to prevent jarring keyboard jump
+            />
+            <Text style={styles.characterCount}>{caption.length}/2200</Text>
           </View>
 
-          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
-            {/* Caption Input */}
-            <View style={styles.inputSection}>
-              <Text style={styles.inputLabel}>Caption</Text>
-              <TextInput
-                style={styles.captionInput}
-                placeholder="Write a caption..."
-                placeholderTextColor="#999"
-                value={caption}
-                onChangeText={setCaption}
-                maxLength={2200}
-                multiline
-                autoFocus
-              />
-              <Text style={styles.characterCount}>{caption.length}/2200</Text>
+          {/* Options */}
+          <TouchableOpacity style={styles.optionRow}>
+            <View style={styles.optionLeft}>
+              <Ionicons name="location-outline" size={24} color="#000" />
+              <Text style={styles.optionText}>Add Location</Text>
             </View>
+            <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
 
-            {/* Additional Options */}
-            <TouchableOpacity style={styles.optionRow}>
-              <View style={styles.optionLeft}>
-                <Ionicons name="location-outline" size={24} color="#000" />
-                <Text style={styles.optionText}>Add Location</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
+          <TouchableOpacity style={styles.optionRow}>
+            <View style={styles.optionLeft}>
+              <Ionicons name="pricetag-outline" size={24} color="#000" />
+              <Text style={styles.optionText}>Tag People</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#999" />
+          </TouchableOpacity>
 
-            <TouchableOpacity style={styles.optionRow}>
-              <View style={styles.optionLeft}>
-                <Ionicons name="pricetag-outline" size={24} color="#000" />
-                <Text style={styles.optionText}>Tag People</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.optionRow}>
-              <View style={styles.optionLeft}>
-                <Ionicons name="musical-notes-outline" size={24} color="#000" />
-                <Text style={styles.optionText}>Add Music</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={20} color="#999" />
-            </TouchableOpacity>
-
-            {/* Privacy Settings */}
-            <View style={styles.divider} />
-            
-            <View style={styles.settingsSection}>
-              <Text style={styles.sectionTitle}>Privacy Settings</Text>
-              
-              <View style={styles.settingRow}>
-                <Text style={styles.settingText}>Allow Comments</Text>
-                <View style={styles.toggle}>
-                  <View style={styles.toggleActive} />
-                </View>
-              </View>
-
-              <View style={styles.settingRow}>
-                <Text style={styles.settingText}>Allow Sharing</Text>
-                <View style={styles.toggle}>
-                  <View style={styles.toggleActive} />
-                </View>
+          {/* Privacy */}
+          <View style={styles.divider} />
+          <View style={styles.settingsSection}>
+            <Text style={styles.sectionTitle}>Privacy Settings</Text>
+            <View style={styles.settingRow}>
+              <Text style={styles.settingText}>Allow Comments</Text>
+              <View style={styles.toggle}>
+                <View style={styles.toggleActive} />
               </View>
             </View>
-          </ScrollView>
-
-          {/* Share Button */}
-          <View style={[styles.modalFooter, { paddingBottom: insets.bottom + 10 }]}>
-            <TouchableOpacity 
-              style={[styles.shareButton, uploading && styles.shareButtonDisabled]} 
-              onPress={handleUpload}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={[styles.shareButtonText, { marginLeft: 10 }]}>Uploading...</Text>
-                </>
-              ) : (
-                <>
-                  <Ionicons name="paper-plane" size={20} color="#fff" />
-                  <Text style={[styles.shareButtonText, { marginLeft: 8 }]}>Share Reel</Text>
-                </>
-              )}
-            </TouchableOpacity>
           </View>
-        </Animated.View>
-      )}
+
+          {/* Spacer for bottom safe area */}
+          <View style={{ height: 100 }} />
+        </ScrollView>
+
+        {/* Share Button (Sticky at bottom of modal) */}
+        <View
+          style={[styles.modalFooter, { paddingBottom: insets.bottom + 10 }]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.shareButton,
+              uploading && styles.shareButtonDisabled,
+            ]}
+            onPress={handleUpload}
+            disabled={uploading}
+          >
+            {uploading ? (
+              <>
+                <ActivityIndicator color="#fff" size="small" />
+                <Text style={[styles.shareButtonText, { marginLeft: 10 }]}>
+                  Uploading...
+                </Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="paper-plane" size={20} color="#fff" />
+                <Text style={[styles.shareButtonText, { marginLeft: 8 }]}>
+                  Share Reel
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'black' },
-  
+  container: { flex: 1, backgroundColor: "black" },
+
   // Empty State
-  emptyContainer: { flex: 1, backgroundColor: '#000' },
+  emptyContainer: { flex: 1, backgroundColor: "#000" },
   emptyHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingBottom: 10,
   },
   headerBtn: { width: 40 },
-  emptyHeaderTitle: { color: '#fff', fontSize: 18, fontWeight: '700' },
-  
+  emptyHeaderTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
   emptyContent: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     paddingHorizontal: 40,
   },
   iconCircle: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: 'rgba(255, 59, 92, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 59, 92, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
     marginBottom: 30,
   },
   emptyTitle: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 12,
   },
   emptySubtitle: {
-    color: '#999',
+    color: "#999",
     fontSize: 16,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: 40,
   },
-  
   primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FF3B5C',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FF3B5C",
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 30,
-    width: '100%',
+    width: "100%",
     marginBottom: 16,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     marginLeft: 10,
   },
-  
   secondaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
     borderWidth: 2,
-    borderColor: '#FF3B5C',
+    borderColor: "#FF3B5C",
     paddingVertical: 16,
     paddingHorizontal: 32,
     borderRadius: 30,
-    width: '100%',
+    width: "100%",
     marginBottom: 24,
   },
   secondaryButtonText: {
-    color: '#FF3B5C',
+    color: "#FF3B5C",
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     marginLeft: 10,
   },
-  
-  tipContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  tipText: {
-    color: '#999',
-    fontSize: 14,
-  },
-  
+  tipContainer: { flexDirection: "row", alignItems: "center", gap: 8 },
+  tipText: { color: "#999", fontSize: 14 },
+
   // Video Preview
-  fullScreenVideo: { 
-    width, 
-    height: height, 
-    position: 'absolute' 
-  },
-  overlay: { 
-    flex: 1, 
-    justifyContent: 'space-between',
-  },
-  
-  header: { 
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20, 
+  fullScreenVideo: { width, height: height, position: "absolute" },
+  overlay: { flex: 1, justifyContent: "space-between" },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
     paddingTop: 10,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  
   durationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.7)",
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
     gap: 6,
   },
-  durationText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  
+  durationText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   musicButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
   },
-  
   bottomControls: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 20,
     paddingBottom: 30,
   },
-  controlButton: {
-    alignItems: 'center',
-  },
-  controlText: {
-    color: '#fff',
-    fontSize: 14,
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  
+  controlButton: { alignItems: "center" },
+  controlText: { color: "#fff", fontSize: 14, marginTop: 8, fontWeight: "600" },
   nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FF3B5C',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FF3B5C",
     paddingVertical: 14,
     paddingHorizontal: 32,
     borderRadius: 30,
     gap: 8,
   },
-  nextButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  
+  nextButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+
   // Caption Modal
   captionModal: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
     height: height * 0.75,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
+    zIndex: 100,
   },
   modalHandle: {
     width: 40,
     height: 4,
-    backgroundColor: '#ddd',
+    backgroundColor: "#ddd",
     borderRadius: 2,
-    alignSelf: 'center',
+    alignSelf: "center",
     marginTop: 10,
     marginBottom: 10,
   },
@@ -525,126 +544,97 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000',
-  },
-  
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  
-  inputSection: {
-    paddingTop: 20,
-    marginBottom: 10,
-  },
+  modalTitle: { fontSize: 18, fontWeight: "700", color: "#000" },
+  modalContent: { flex: 1, paddingHorizontal: 20 },
+  inputSection: { paddingTop: 20, marginBottom: 10 },
   inputLabel: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: "600",
+    color: "#000",
     marginBottom: 10,
   },
   captionInput: {
     fontSize: 16,
-    color: '#000',
+    color: "#000",
     minHeight: 100,
     maxHeight: 150,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
     paddingVertical: 10,
   },
   characterCount: {
     fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
+    color: "#999",
+    textAlign: "right",
     marginTop: 5,
   },
-  
   optionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
-  optionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  optionText: {
-    fontSize: 16,
-    color: '#000',
-  },
-  
+  optionLeft: { flexDirection: "row", alignItems: "center", gap: 16 },
+  optionText: { fontSize: 16, color: "#000" },
   divider: {
     height: 8,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: "#f5f5f5",
     marginVertical: 20,
     marginHorizontal: -20,
   },
-  
-  settingsSection: {
-    marginBottom: 20,
-  },
+  settingsSection: { marginBottom: 20 },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    fontWeight: "600",
+    color: "#000",
     marginBottom: 16,
   },
   settingRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 12,
   },
-  settingText: {
-    fontSize: 16,
-    color: '#000',
-  },
+  settingText: { fontSize: 16, color: "#000" },
   toggle: {
     width: 50,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#FF3B5C',
+    backgroundColor: "#FF3B5C",
     padding: 2,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+    justifyContent: "center",
+    alignItems: "flex-end",
   },
   toggleActive: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
-  
+
   modalFooter: {
     paddingHorizontal: 20,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    borderTopColor: "#f0f0f0",
+    backgroundColor: "#fff",
   },
   shareButton: {
-    flexDirection: 'row',
-    backgroundColor: '#FF3B5C',
+    flexDirection: "row",
+    backgroundColor: "#FF3B5C",
     paddingVertical: 16,
     borderRadius: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
-  shareButtonDisabled: {
-    opacity: 0.7,
-  },
-  shareButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
+  shareButtonDisabled: { opacity: 0.7 },
+  shareButtonText: { color: "#fff", fontWeight: "700", fontSize: 16 },
 });
 
 export default CreateReelScreen;

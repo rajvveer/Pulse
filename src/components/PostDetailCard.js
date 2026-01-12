@@ -1,16 +1,16 @@
-// components/PostDetailCard.js (FIXED - Robust Author Data)
+// components/PostDetailCard.js
 import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
   TouchableOpacity,
-  Image,
   Dimensions,
   Pressable,
   Animated,
 } from 'react-native';
-import { FlatList } from 'react-native-gesture-handler';
+import { Image } from 'expo-image';
+import { FlatList } from 'react-native-gesture-handler'; // Optimized for nested lists
 import { useNavigation } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
@@ -18,6 +18,17 @@ import { getTheme } from '../styles/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_HEIGHT = 400;
+
+// ✅ HELPER: Extract Author Details Robustly
+const getAuthorDetails = (author) => {
+  if (!author) return { avatarUrl: null, displayName: 'Unknown', username: 'unknown' };
+  
+  const avatarUrl = author.profile?.avatar || author.avatar;
+  const displayName = author.profile?.displayName || author.name || author.username || 'Unknown';
+  const username = author.username || 'unknown';
+  
+  return { avatarUrl, displayName, username };
+};
 
 const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => {
   const navigation = useNavigation();
@@ -32,18 +43,6 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
   const mediaItems = post.content?.media?.filter(item => item?.url) || [];
   const hasMultipleImages = mediaItems.length > 1;
 
-  // ✅ HELPER: Extract Author Details Robustly
-  // This handles both structures: author.avatar OR author.profile.avatar
-  const getAuthorDetails = (author) => {
-    if (!author) return { avatarUrl: null, displayName: 'Unknown', username: 'unknown' };
-    
-    const avatarUrl = author.profile?.avatar || author.avatar;
-    const displayName = author.profile?.displayName || author.name || author.username || 'Unknown';
-    const username = author.username || 'unknown';
-    
-    return { avatarUrl, displayName, username };
-  };
-
   const { avatarUrl, displayName, username } = getAuthorDetails(post.author);
 
   const handleUserPress = () => {
@@ -52,12 +51,14 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
     }
   };
 
+  // ✅ MEMOIZED: Prevent recreation on every render
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
     if (viewableItems.length > 0) {
       setActiveImageIndex(viewableItems[0].index);
     }
   }).current;
 
+  // ✅ MEMOIZED: Render Item
   const renderImageItem = useCallback(({ item }) => {
     return (
       <View style={{ width: SCREEN_WIDTH, height: IMAGE_HEIGHT }}>
@@ -70,6 +71,7 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
     );
   }, [theme]);
 
+  // ✅ MEMOIZED: Time Ago Calculation
   const timeAgo = useMemo(() => {
     if (!post.createdAt) return '';
     const now = new Date();
@@ -87,26 +89,13 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
 
   const animateButton = (animValue, callback) => {
     Animated.sequence([
-      Animated.timing(animValue, {
-        toValue: 0.85,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(animValue, {
-        toValue: 1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
+      Animated.timing(animValue, { toValue: 0.85, duration: 100, useNativeDriver: true }),
+      Animated.timing(animValue, { toValue: 1, duration: 100, useNativeDriver: true }),
     ]).start(callback);
   };
 
-  const handleLike = () => {
-    animateButton(likeScale, () => onLike?.(post._id));
-  };
-
-  const handleBookmark = () => {
-    animateButton(bookmarkScale, () => onBookmark?.(post._id));
-  };
+  const handleLike = () => animateButton(likeScale, () => onLike?.(post._id));
+  const handleBookmark = () => animateButton(bookmarkScale, () => onBookmark?.(post._id));
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
@@ -118,19 +107,15 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
           onPress={handleUserPress}
           disabled={post.isAnonymous}
         >
-          {/* ✅ FIXED: Use extracted avatarUrl */}
           {avatarUrl ? (
             <Image source={{ uri: avatarUrl }} style={styles.avatar} />
           ) : (
             <View style={[styles.avatar, { backgroundColor: theme.colors.primary }]}>
-              <Text style={styles.avatarText}>
-                {displayName.charAt(0).toUpperCase()}
-              </Text>
+              <Text style={styles.avatarText}>{displayName.charAt(0).toUpperCase()}</Text>
             </View>
           )}
           <View style={styles.userDetails}>
             <View style={styles.nameRow}>
-              {/* ✅ FIXED: Use extracted displayName */}
               <Text style={[styles.username, { color: theme.colors.text }]}>
                 {post.isAnonymous ? 'Anonymous' : displayName}
               </Text>
@@ -167,13 +152,13 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
             pagingEnabled={true}
             showsHorizontalScrollIndicator={false}
             nestedScrollEnabled={true} 
-            removeClippedSubviews={false}
+            removeClippedSubviews={false} // Keep false for horizontal sliders inside vertical lists
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
             windowSize={3}
           />
 
-          {/* Enhanced Pagination */}
+          {/* Pagination Dots */}
           {hasMultipleImages && (
             <View style={styles.paginationCapsule}>
               {mediaItems.map((_, index) => (
@@ -197,11 +182,7 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
       <View style={styles.actionBar}>
         <View style={styles.leftActions}>
           <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={handleLike}
-              activeOpacity={0.7}
-            >
+            <TouchableOpacity style={styles.actionButton} onPress={handleLike} activeOpacity={0.7}>
               <Ionicons 
                 name={post.isLiked ? "heart" : "heart-outline"} 
                 size={28} 
@@ -246,107 +227,26 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
 };
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 0,
-  },
-  header: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  userInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  userDetails: {
-    justifyContent: 'center',
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  username: {
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: -0.3,
-  },
-  timestamp: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  moreButton: {
-    padding: 8,
-    marginRight: -8,
-  },
-  caption: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  mediaWrapper: {
-    position: 'relative',
-    marginBottom: 12,
-  },
-  paginationCapsule: {
-    position: 'absolute',
-    bottom: 16,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
-  },
-  paginationDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  actionBar: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  leftActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  actionText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  divider: {
-    height: 1,
-    opacity: 0.5,
-    marginTop: 8,
-  },
+  container: { marginBottom: 0 },
+  header: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'space-between' },
+  userInfo: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  avatar: { width: 42, height: 42, borderRadius: 21, marginRight: 12, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#FFF', fontSize: 18, fontWeight: '700' },
+  userDetails: { justifyContent: 'center' },
+  nameRow: { flexDirection: 'row', alignItems: 'center' },
+  username: { fontSize: 16, fontWeight: '700', letterSpacing: -0.3 },
+  timestamp: { fontSize: 12, marginTop: 2 },
+  moreButton: { padding: 8, marginRight: -8 },
+  caption: { paddingHorizontal: 16, paddingBottom: 12, fontSize: 15, lineHeight: 22 },
+  mediaWrapper: { position: 'relative', marginBottom: 12 },
+  paginationCapsule: { position: 'absolute', bottom: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, gap: 6 },
+  paginationDot: { width: 6, height: 6, borderRadius: 3 },
+  actionBar: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center', justifyContent: 'space-between' },
+  leftActions: { flexDirection: 'row', alignItems: 'center', gap: 20 },
+  actionButton: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  actionText: { fontSize: 15, fontWeight: '600' },
+  divider: { height: 1, opacity: 0.5, marginTop: 8 },
 });
 
-export default PostDetailCard;
+// ✅ WRAP IN MEMO TO OPTIMIZE PERFORMANCE
+export default React.memo(PostDetailCard);
