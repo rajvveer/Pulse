@@ -6,327 +6,291 @@ import {
   Dimensions,
   ActivityIndicator,
   TouchableOpacity,
-  RefreshControl,
   Modal,
   TextInput,
   KeyboardAvoidingView,
   Platform,
   FlatList,
   Animated,
-  Share,
   StatusBar,
   TouchableWithoutFeedback,
+  Share,
 } from "react-native";
 import { Image } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useFocusEffect, useIsFocused } from "@react-navigation/native";
+import { useIsFocused } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "../services/api";
 import GifPickerModal from "../components/GifPickerModal";
 
-const { width, height: screenHeight } = Dimensions.get("window");
+// ✅ USE 'screen' instead of 'window' for full device dimensions including system UI
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("screen");
 
-// --- REEL ITEM ---
+// --- UTILITY COMPONENTS ---
+
+/**
+ * Renders a side action button (Like, Comment, Share)
+ * Ensures consistent spacing and hit-slop for easier tapping.
+ */
+const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
+  <TouchableOpacity onPress={onPress} style={styles.actionButton} activeOpacity={0.7}>
+    <Animated.View style={scale ? { transform: [{ scale }] } : {}}>
+      <Ionicons name={icon} size={32} color={color} style={styles.shadow} />
+    </Animated.View>
+    {label && <Text style={styles.actionText}>{label}</Text>}
+  </TouchableOpacity>
+);
+
+// --- SINGLE REEL ITEM ---
+
 const ReelItem = React.memo(
   ({
     item,
     isActive,
-    isScreenFocused,
+    shouldPlay,
     bottomTabHeight,
+    bottomInset,
     onLike,
-    onOpenComments,
+    onComment,
     onShare,
     onFollow,
   }) => {
-    // Animation Values
-    const likeScale = useRef(new Animated.Value(1)).current;
-    const doubleTapScale = useRef(new Animated.Value(0)).current;
-    const playIconScale = useRef(new Animated.Value(0)).current;
+    // 1. Layout Calculations
+    // ✅ FIXED: Calculate reel height accounting for system navigation bar on Android
+    const reelHeight = SCREEN_HEIGHT - bottomTabHeight - bottomInset;
+    const insets = useSafeAreaInsets();
 
+    // 2. Animation Values
+    const heartScale = useRef(new Animated.Value(1)).current;
+    const doubleTapOpacity = useRef(new Animated.Value(0)).current;
+    const playIconOpacity = useRef(new Animated.Value(0)).current;
+
+    // 3. Local State
     const [isLiked, setIsLiked] = useState(
       item.isLiked || (item.likes && item.likes.includes(item.currentUserId))
     );
     const [likesCount, setLikesCount] = useState(item.likes?.length || 0);
-    const [isFollowing, setIsFollowing] = useState(
-      item.user?.isFollowing || false
-    );
-    const [userPaused, setUserPaused] = useState(false); // User manually paused
-    const [showDoubleTapHeart, setShowDoubleTapHeart] = useState(false);
+    const [isFollowing, setIsFollowing] = useState(item.user?.isFollowing || false);
+    const [isMuted, setIsMuted] = useState(false);
+    const [userPaused, setUserPaused] = useState(false);
 
     const lastTap = useRef(null);
     const author = item.author || item.user || {};
-    const avatarUrl = author.profile?.avatar || author.avatar;
 
-    // ✅ SETUP PLAYER
-    const player = useVideoPlayer(item.videoUrl, (player) => {
-      player.loop = true;
-      player.muted = false;
-      player.timeUpdateEventInterval = 1000; // Optimization: Updates less frequently
+    // 4. Video Player Setup (New Expo Video API)
+    const player = useVideoPlayer(item.videoUrl, (playerInstance) => {
+      playerInstance.loop = true;
+      playerInstance.muted = isMuted;
     });
 
-    // ✅ LOGIC: Play/Pause based on focus
+    // 5. Playback Logic
     useEffect(() => {
-      if (isActive && isScreenFocused && !userPaused) {
+      if (isActive && shouldPlay && !userPaused) {
         player.play();
       } else {
         player.pause();
       }
-    }, [isActive, isScreenFocused, userPaused, player]);
+    }, [isActive, shouldPlay, userPaused, player]);
 
-    const handleLikePress = () => {
-      const newLikedState = !isLiked;
-      setIsLiked(newLikedState);
-      setLikesCount((prev) => (newLikedState ? prev + 1 : prev - 1));
+    // Sync Mute State
+    useEffect(() => {
+      player.muted = isMuted;
+    }, [isMuted, player]);
 
+    // 6. Interaction Handlers
+    const animateHeart = () => {
       Animated.sequence([
-        Animated.timing(likeScale, {
-          toValue: 1.3,
-          duration: 100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(likeScale, {
-          toValue: 1,
-          duration: 100,
-          useNativeDriver: true,
-        }),
+        Animated.spring(heartScale, { toValue: 1.3, useNativeDriver: true, speed: 50 }),
+        Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, speed: 50 }),
       ]).start();
-
-      onLike(item._id);
     };
 
-    const handlePress = () => {
+    const animateDoubleTap = () => {
+      Animated.sequence([
+        Animated.timing(doubleTapOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        Animated.timing(doubleTapOpacity, { toValue: 0, duration: 800, delay: 300, useNativeDriver: true }),
+      ]).start();
+    };
+
+    const togglePlayPauseAnimation = () => {
+      playIconOpacity.setValue(1);
+      Animated.timing(playIconOpacity, {
+        toValue: 0,
+        duration: 800,
+        useNativeDriver: true,
+      }).start();
+    };
+
+    const handleSingleTap = () => {
       const now = Date.now();
       const DOUBLE_PRESS_DELAY = 300;
 
       if (lastTap.current && now - lastTap.current < DOUBLE_PRESS_DELAY) {
-        // Double Tap (Like)
+        // Double Tap - Like
         if (!isLiked) {
           setIsLiked(true);
           setLikesCount((prev) => prev + 1);
           onLike(item._id);
         }
-        setShowDoubleTapHeart(true);
-        Animated.sequence([
-          Animated.timing(doubleTapScale, {
-            toValue: 1.5,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-          Animated.timing(doubleTapScale, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ]).start(() => setShowDoubleTapHeart(false));
+        animateHeart();
+        animateDoubleTap();
       } else {
-        // Single Tap (Pause/Play)
+        // Single Tap - Play/Pause
         if (player.playing) {
           player.pause();
           setUserPaused(true);
-          Animated.sequence([
-            Animated.timing(playIconScale, {
-              toValue: 1.2,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-            Animated.timing(playIconScale, {
-              toValue: 1,
-              duration: 200,
-              useNativeDriver: true,
-            }),
-          ]).start();
+          togglePlayPauseAnimation();
         } else {
           player.play();
           setUserPaused(false);
-          Animated.timing(playIconScale, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }).start();
+          togglePlayPauseAnimation();
         }
       }
       lastTap.current = now;
     };
 
-    const handleFollow = () => {
-      setIsFollowing(!isFollowing);
-      onFollow(author._id);
+    const handleLikePress = () => {
+      const newState = !isLiked;
+      setIsLiked(newState);
+      setLikesCount((prev) => (newState ? prev + 1 : prev - 1));
+      animateHeart();
+      onLike(item._id);
     };
 
-    const formatCount = (count) => {
-      if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-      if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-      return count.toString();
+    const formatNumber = (num) => {
+      if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
+      if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+      return num;
     };
 
     return (
-      <View
-        style={[
-          styles.reelContainer,
-          { height: screenHeight - bottomTabHeight },
-        ]}
-      >
-        <TouchableWithoutFeedback onPress={handlePress}>
-          <View style={styles.videoContainer}>
-            {/* ✅ FIXED VIDEO COMPONENT */}
-            {isActive || isScreenFocused ? (
-              <VideoView
-                style={styles.video}
-                player={player}
-                contentFit="cover" // Fixes black bars
-                nativeControls={false} // Hides system UI
-                fullscreenOptions={{ isAllowed: false }} // Fixes warning
-                allowsPictureInPicture={false}
-                showsTimecodes={false}
-              />
-            ) : (
-              <Image
-                source={{ uri: item.thumbnail || item.videoUrl }}
-                style={styles.video}
-                contentFit="cover"
-              />
-            )}
+      <View style={[styles.reelContainer, { height: reelHeight }]}>
+        <TouchableWithoutFeedback onPress={handleSingleTap}>
+          <View style={styles.videoWrapper}>
+            {/* VIDEO LAYER */}
+            <VideoView
+              style={StyleSheet.absoluteFill}
+              player={player}
+              contentFit="cover"
+              nativeControls={false}
+              allowsPictureInPicture={false}
+            />
 
-            {/* Double Tap Heart Animation */}
-            {showDoubleTapHeart && (
-              <Animated.View
-                style={[
-                  styles.centerIcon,
-                  { transform: [{ scale: doubleTapScale }] },
-                ]}
-              >
-                <Ionicons
-                  name="heart"
-                  size={100}
-                  color="rgba(255, 255, 255, 0.9)"
-                />
+            {/* CENTER ANIMATIONS LAYER */}
+            <View style={styles.centerOverlay}>
+              {/* Double Tap Heart */}
+              <Animated.View style={{ opacity: doubleTapOpacity, transform: [{ scale: 1.5 }] }}>
+                <Ionicons name="heart" size={100} color="rgba(255,255,255,0.9)" />
               </Animated.View>
-            )}
 
-            {/* Play/Pause Icon */}
-            {userPaused && (
-              <Animated.View
-                style={[
-                  styles.centerIcon,
-                  { transform: [{ scale: playIconScale }] },
-                ]}
-              >
-                <Ionicons
-                  name="play"
-                  size={80}
-                  color="rgba(255, 255, 255, 0.8)"
-                />
+              {/* Play/Pause Indicator */}
+              <Animated.View style={[styles.playIconContainer, { opacity: playIconOpacity }]}>
+                <Ionicons name={userPaused ? "play" : "pause"} size={60} color="rgba(255,255,255,0.8)" />
               </Animated.View>
-            )}
-          </View>
-        </TouchableWithoutFeedback>
+            </View>
 
-        <LinearGradient
-          colors={["rgba(0,0,0,0.4)", "transparent"]}
-          style={styles.topGradient}
-        />
-        <LinearGradient
-          colors={["transparent", "rgba(0,0,0,0.6)"]}
-          style={styles.bottomGradient}
-        />
+            {/* GRADIENTS - For Text Readability */}
+            <LinearGradient
+              colors={["rgba(0,0,0,0.3)", "transparent"]}
+              style={[styles.topGradient, { height: insets.top + 60 }]}
+            />
+            <LinearGradient
+              colors={["transparent", "rgba(0,0,0,0.1)", "rgba(0,0,0,0.8)"]}
+              style={styles.bottomGradient}
+            />
 
-        {/* OVERLAY CONTENT */}
-        <View style={styles.overlay}>
-          <View style={styles.content}>
-            <View style={styles.userInfo}>
-              <View style={styles.userRow}>
-                <View style={styles.avatar}>
-                  {avatarUrl ? (
-                    <Image
-                      source={{ uri: avatarUrl }}
-                      style={styles.avatarImage}
-                      contentFit="cover"
-                    />
-                  ) : (
-                    <Text style={styles.avatarText}>
-                      {(author.username?.[0] || "U").toUpperCase()}
-                    </Text>
+            {/* UI INTERFACE LAYER */}
+            {/* ✅ CRITICAL FIX: Add proper padding for Android navigation bar */}
+            <View 
+              style={[
+                styles.uiContainer, 
+                { 
+                  paddingBottom: Platform.OS === 'android' ? Math.max(bottomInset, 10) : 10,
+                  paddingHorizontal: 16 
+                }
+              ]}
+            >
+              {/* Bottom Left: User Info & Caption */}
+              <View style={styles.infoContainer}>
+                <View style={styles.userRow}>
+                  <Image 
+                    source={{ uri: author.profile?.avatar || author.avatar }} 
+                    style={styles.avatar} 
+                    contentFit="cover"
+                  />
+                  <Text style={styles.username}>@{author.username}</Text>
+                  {!isFollowing && (
+                    <TouchableOpacity 
+                      onPress={() => { 
+                        setIsFollowing(true); 
+                        onFollow(author._id); 
+                      }} 
+                      style={styles.followBtn}
+                    >
+                      <Text style={styles.followText}>Follow</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
-                <Text style={styles.username}>
-                  @{author.username || "unknown"}
+
+                <Text style={styles.caption} numberOfLines={2}>
+                  {item.caption} <Text style={styles.hashtag}>#viral #trending</Text>
                 </Text>
-                {author.isVerified && (
-                  <Ionicons
-                    name="checkmark-circle"
-                    size={16}
-                    color="#4DB6AC"
-                    style={{ marginLeft: 4 }}
-                  />
+
+                {item.music && (
+                  <View style={styles.musicRow}>
+                    <Ionicons name="musical-notes" size={14} color="#fff" />
+                    <View style={styles.tickerContainer}>
+                      <Text style={styles.musicText}>{item.music} • Original Audio</Text>
+                    </View>
+                  </View>
                 )}
-                {!isFollowing && (
-                  <TouchableOpacity
-                    onPress={handleFollow}
-                    style={styles.followBtn}
-                  >
-                    <Text style={styles.followText}>Follow</Text>
-                  </TouchableOpacity>
-                )}
+              </View>
+
+              {/* Bottom Right: Actions */}
+              <View style={styles.actionsContainer}>
+                <ActionButton 
+                  icon={isLiked ? "heart" : "heart-outline"} 
+                  color={isLiked ? "#FF3B5C" : "#fff"} 
+                  label={formatNumber(likesCount)} 
+                  onPress={handleLikePress}
+                  scale={heartScale}
+                />
+
+                <ActionButton 
+                  icon="chatbubble-ellipses-outline" 
+                  label={formatNumber(item.commentsCount || 0)} 
+                  onPress={() => onComment(item)} 
+                />
+
+                <ActionButton 
+                  icon="paper-plane-outline" 
+                  label="Share" 
+                  onPress={() => onShare(item)} 
+                />
+
+                <ActionButton 
+                  icon={isMuted ? "volume-mute-outline" : "volume-high-outline"} 
+                  onPress={() => setIsMuted(!isMuted)} 
+                />
+
+                {/* Rotating Album Art */}
+                <View style={styles.vinylContainer}>
+                  <Image source={{ uri: author.profile?.avatar }} style={styles.vinyl} />
+                </View>
               </View>
             </View>
-            <Text style={styles.caption} numberOfLines={2}>
-              {item.caption}
-            </Text>
-            {item.music && (
-              <View style={styles.musicRow}>
-                <Ionicons name="musical-notes" size={14} color="#fff" />
-                <Text style={styles.musicText}>{item.music}</Text>
-              </View>
-            )}
           </View>
-
-          {/* SIDE ACTIONS */}
-          <View style={styles.actions}>
-            <TouchableOpacity onPress={handleLikePress} style={styles.actionBtn}>
-              <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-                <Ionicons
-                  name={isLiked ? "heart" : "heart-outline"}
-                  size={32}
-                  color={isLiked ? "#FF3B5C" : "#fff"}
-                />
-              </Animated.View>
-              <Text style={styles.actionLabel}>{formatCount(likesCount)}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => onOpenComments(item)}
-              style={styles.actionBtn}
-            >
-              <Ionicons name="chatbubble-outline" size={30} color="#fff" />
-              <Text style={styles.actionLabel}>
-                {formatCount(item.commentsCount || 0)}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onShare(item)} style={styles.actionBtn}>
-              <Ionicons name="paper-plane-outline" size={30} color="#fff" />
-              <Text style={styles.actionLabel}>Share</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => (player.muted = !player.muted)}
-              style={styles.actionBtn}
-            >
-              <Ionicons
-                name={player.muted ? "volume-mute" : "volume-high"}
-                size={28}
-                color="#fff"
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
+        </TouchableWithoutFeedback>
       </View>
     );
   },
   (prev, next) => {
     return (
       prev.isActive === next.isActive &&
-      prev.isScreenFocused === next.isScreenFocused &&
+      prev.shouldPlay === next.shouldPlay &&
       prev.item._id === next.item._id &&
       prev.item.commentsCount === next.item.commentsCount
     );
@@ -334,66 +298,76 @@ const ReelItem = React.memo(
 );
 
 // --- MAIN SCREEN ---
+
 const ReelsScreen = ({ navigation }) => {
+  const insets = useSafeAreaInsets();
+  const bottomTabHeight = useBottomTabBarHeight();
+  const isFocused = useIsFocused();
+
+  // State
   const [reels, setReels] = useState([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [activeIndex, setActiveIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Comment Modal State
   const [showComments, setShowComments] = useState(false);
   const [activeReel, setActiveReel] = useState(null);
   const [comments, setComments] = useState([]);
   const [commentText, setCommentText] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
-  const [postingComment, setPostingComment] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
 
-  const bottomTabHeight = useBottomTabBarHeight();
-  const insets = useSafeAreaInsets();
-  const isFocused = useIsFocused();
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  // ✅ Calculate proper height accounting for system UI
+  const reelHeight = SCREEN_HEIGHT - bottomTabHeight - insets.bottom;
 
+  // --- API LOGIC ---
   const fetchReels = async () => {
     try {
       const res = await api.get("/reels/feed");
-      let data = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      const data = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setReels(data);
-    } catch (err) {
-      console.log("Error fetching reels:", err);
-    } finally {
+    } catch (e) { 
+      console.error("Error fetching reels:", e); 
+    } finally { 
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      if (reels.length === 0) fetchReels();
-    }, [])
-  );
-  const onRefresh = () => {
+  useEffect(() => { 
+    fetchReels(); 
+  }, []);
+
+  const handleRefresh = useCallback(() => {
     setRefreshing(true);
     fetchReels();
-  };
+  }, []);
 
-  const handleLike = useCallback(async (reelId) => {
+  // --- ACTIONS ---
+  const handleLike = useCallback(async (id) => {
     try {
-      await api.post(`/reels/${reelId}/like`);
-    } catch (error) {
-      console.error(error);
+      await api.post(`/reels/${id}/like`);
+    } catch (e) {
+      console.error("Error liking reel:", e);
     }
   }, []);
-  const handleFollow = useCallback(async (userId) => {
+
+  const handleFollow = useCallback(async (id) => {
     try {
-      await api.post(`/users/${userId}/follow`);
-    } catch (error) {
-      console.error(error);
+      await api.post(`/users/${id}/follow`);
+    } catch (e) {
+      console.error("Error following user:", e);
     }
   }, []);
-  const handleShare = useCallback(async (reel) => {
+
+  const handleShare = useCallback(async (item) => {
     try {
-      await Share.share({ message: `Watch this reel! ${reel.videoUrl}` });
-    } catch (error) {
-      console.error(error);
+      await Share.share({ 
+        message: `Check out this reel! ${item.videoUrl}` 
+      });
+    } catch (e) {
+      console.error("Error sharing:", e);
     }
   }, []);
 
@@ -404,447 +378,473 @@ const ReelsScreen = ({ navigation }) => {
     try {
       const res = await api.get(`/reels/${reel._id}/comments`);
       setComments(res.data.data || []);
-    } catch (error) {
-      console.error(error);
-      setComments([]);
-    } finally {
-      setLoadingComments(false);
+    } catch(e) { 
+      console.error("Error fetching comments:", e);
+      setComments([]); 
+    } finally { 
+      setLoadingComments(false); 
     }
   }, []);
 
   const postComment = async () => {
-    if (!commentText.trim() || postingComment) return;
-    setPostingComment(true);
+    if (!commentText.trim()) return;
     try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, {
-        content: commentText,
-      });
+      const res = await api.post(`/reels/${activeReel._id}/comments`, { content: commentText });
       setComments([res.data.data, ...comments]);
       setCommentText("");
-      setReels((prev) =>
-        prev.map((r) =>
-          r._id === activeReel._id
-            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
-            : r
-        )
-      );
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setPostingComment(false);
+      // Update local count
+      setReels(prev => prev.map(r => 
+        r._id === activeReel._id 
+          ? {...r, commentsCount: (r.commentsCount || 0) + 1} 
+          : r
+      ));
+    } catch(e) { 
+      console.error("Error posting comment:", e); 
     }
   };
 
   const handleGifSelect = async (gif) => {
-    if (postingComment) return;
-    setPostingComment(true);
+    setShowGifPicker(false);
     try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, {
-        content: gif.url,
-        type: "gif",
+      const res = await api.post(`/reels/${activeReel._id}/comments`, { 
+        content: gif.url, 
+        type: 'gif' 
       });
       setComments([res.data.data, ...comments]);
-      setReels((prev) =>
-        prev.map((r) =>
-          r._id === activeReel._id
-            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
-            : r
-        )
-      );
-    } catch (error) {
-      console.error("Failed to post GIF", error);
-    } finally {
-      setPostingComment(false);
+      setReels(prev => prev.map(r => 
+        r._id === activeReel._id 
+          ? {...r, commentsCount: (r.commentsCount || 0) + 1} 
+          : r
+      ));
+    } catch(e) { 
+      console.error("Error posting gif:", e); 
     }
   };
 
+  // --- LIST CONFIGURATION ---
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
-    if (viewableItems && viewableItems.length > 0)
-      setCurrentIndex(viewableItems[0].index);
+    if (viewableItems?.length > 0) {
+      setActiveIndex(viewableItems[0].index || 0);
+    }
   }).current;
 
-  const renderItem = useCallback(
-    ({ item, index }) => (
-      <ReelItem
-        item={item}
-        isActive={index === currentIndex}
-        isScreenFocused={isFocused}
-        bottomTabHeight={bottomTabHeight}
-        onLike={handleLike}
-        onOpenComments={openComments}
-        onShare={handleShare}
-        onFollow={handleFollow}
-      />
-    ),
-    [
-      currentIndex,
-      isFocused,
-      bottomTabHeight,
-      handleLike,
-      openComments,
-      handleShare,
-      handleFollow,
-    ]
-  );
+  const viewabilityConfig = useRef({ 
+    itemVisiblePercentThreshold: 80 
+  }).current;
 
-  const getItemLayout = useRef((data, index) => ({
-    length: screenHeight - bottomTabHeight,
-    offset: (screenHeight - bottomTabHeight) * index,
-    index,
-  })).current;
+  const renderItem = useCallback(({ item, index }) => (
+    <ReelItem
+      item={item}
+      isActive={index === activeIndex}
+      shouldPlay={isFocused}
+      bottomTabHeight={bottomTabHeight}
+      bottomInset={insets.bottom}
+      onLike={handleLike}
+      onComment={openComments}
+      onShare={handleShare}
+      onFollow={handleFollow}
+    />
+  ), [activeIndex, isFocused, bottomTabHeight, insets.bottom, handleLike, openComments, handleShare, handleFollow]);
 
-  if (loading && !refreshing && reels.length === 0)
+  const keyExtractor = useCallback((item) => item._id, []);
+
+  if (loading && reels.length === 0) {
     return (
-      <View style={styles.centerContainer}>
+      <View style={styles.loaderCenter}>
         <ActivityIndicator size="large" color="#FF3B5C" />
       </View>
     );
+  }
 
   return (
     <View style={styles.container}>
-      <StatusBar
-        barStyle="light-content"
-        translucent
-        backgroundColor="transparent"
+      {/* ✅ Make status bar translucent for edge-to-edge */}
+      <StatusBar 
+        barStyle="light-content" 
+        translucent={true}
+        backgroundColor="transparent" 
       />
-      <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
-        <Text style={styles.topBarText}>Reels</Text>
-        <TouchableOpacity style={[styles.cameraBtn, { top: insets.top + 10 }]}>
-          <Ionicons name="camera-outline" size={26} color="#fff" />
+
+      {/* HEADER OVERLAY */}
+      <View style={[styles.header, { top: insets.top }]}>
+        <Text style={styles.headerTitle}>Reels</Text>
+        <TouchableOpacity style={styles.cameraIcon}>
+          <Ionicons name="camera-outline" size={28} color="#fff" />
         </TouchableOpacity>
       </View>
 
       <FlatList
         data={reels}
         renderItem={renderItem}
-        keyExtractor={(item) => item._id}
+        keyExtractor={keyExtractor}
         pagingEnabled
+        decelerationRate="fast"
+        disableIntervalMomentum
         showsVerticalScrollIndicator={false}
-        windowSize={2}
-        removeClippedSubviews={true}
-        initialNumToRender={1}
-        maxToRenderPerBatch={1}
-        getItemLayout={getItemLayout}
+        getItemLayout={(data, index) => ({
+          length: reelHeight,
+          offset: reelHeight * index,
+          index,
+        })}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor="#fff"
-            progressViewOffset={insets.top + 50}
-          />
-        }
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
+        windowSize={3}
+        removeClippedSubviews={Platform.OS === 'android'}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
       />
 
       {/* COMMENTS MODAL */}
-      <Modal
-        visible={showComments}
-        animationType="slide"
-        transparent={true}
+      <Modal 
+        visible={showComments} 
+        animationType="slide" 
+        transparent 
         onRequestClose={() => setShowComments(false)}
       >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalContainer}
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"} 
+          style={styles.modalKeyView}
         >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowComments(false)}
+          <TouchableOpacity 
+            style={styles.modalBackdrop} 
+            onPress={() => setShowComments(false)} 
+            activeOpacity={1} 
           />
-          <View style={[styles.modalContent, { height: screenHeight * 0.75 }]}>
-            <View style={styles.modalHandle} />
+          <View style={[styles.modalContent, { height: SCREEN_HEIGHT * 0.7 }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{comments.length} Comments</Text>
+              <Text style={styles.modalTitle}>Comments</Text>
               <TouchableOpacity onPress={() => setShowComments(false)}>
-                <Ionicons name="close" size={26} color="#000" />
+                <Ionicons name="close" size={24} color="#000" />
               </TouchableOpacity>
             </View>
+
             {loadingComments ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator color="#FF3B5C" />
-              </View>
+              <ActivityIndicator style={{marginTop: 20}} color="#FF3B5C" />
             ) : (
               <FlatList
                 data={comments}
-                keyExtractor={(item) => item._id}
-                removeClippedSubviews={true}
-                renderItem={({ item }) => {
-                  const cAuthor = item.author || {};
-                  const isGif =
-                    item.content?.includes("http") &&
-                    (item.content?.includes(".gif") || item.type === "gif");
-                  return (
-                    <View style={styles.commentItem}>
-                      <View style={styles.commentAvatar}>
-                        {cAuthor.profile?.avatar ? (
-                          <Image
-                            source={{ uri: cAuthor.profile.avatar }}
-                            style={styles.avatarImage}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <Text style={styles.commentAvatarText}>
-                            {cAuthor.username?.[0].toUpperCase()}
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.commentContent}>
-                        <View style={styles.commentHeader}>
-                          <Text style={styles.commentUser}>
-                            @{cAuthor.username}
-                          </Text>
-                          <Text style={styles.commentTime}>2h</Text>
-                        </View>
-                        {isGif ? (
-                          <Image
-                            source={{ uri: item.content }}
-                            style={{
-                              width: 150,
-                              height: 150,
-                              borderRadius: 8,
-                              marginTop: 4,
-                            }}
-                            contentFit="cover"
-                          />
-                        ) : (
-                          <Text style={styles.commentText}>{item.content}</Text>
-                        )}
-                      </View>
+                keyExtractor={i => i._id}
+                renderItem={({item}) => (
+                  <View style={styles.commentRow}>
+                    <Image 
+                      source={{uri: item.author?.profile?.avatar}} 
+                      style={styles.commentAvatar} 
+                    />
+                    <View style={{flex: 1}}>
+                      <Text style={styles.commentUser}>
+                        @{item.author?.username} 
+                        <Text style={styles.commentTime}> • 2h</Text>
+                      </Text>
+                      {item.type === 'gif' || item.content.includes('.gif') ? (
+                        <Image 
+                          source={{uri: item.content}} 
+                          style={{width: 100, height: 100, borderRadius: 8, marginTop: 4}} 
+                        />
+                      ) : (
+                        <Text style={styles.commentBody}>{item.content}</Text>
+                      )}
                     </View>
-                  );
-                }}
-                contentContainerStyle={styles.commentsList}
-                ListEmptyComponent={
-                  <View style={styles.emptyComments}>
-                    <Text style={styles.emptyCommentsText}>
-                      No comments yet
-                    </Text>
                   </View>
+                )}
+                ListEmptyComponent={
+                  <Text style={styles.emptyText}>No comments yet. Say something!</Text>
                 }
               />
             )}
-            <View style={styles.commentInputContainer}>
-              <TouchableOpacity
-                onPress={() => setShowGifPicker(true)}
-                style={styles.gifButton}
-              >
-                <Ionicons name="images-outline" size={24} color="#666" />
+
+            <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 10 }]}>
+              <TouchableOpacity onPress={() => setShowGifPicker(true)}>
+                <Ionicons name="images-outline" size={28} color="#555" />
               </TouchableOpacity>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Add a comment..."
+              <TextInput 
+                placeholder="Add a comment..." 
+                style={styles.input} 
+                value={commentText} 
+                onChangeText={setCommentText} 
                 placeholderTextColor="#999"
-                value={commentText}
-                onChangeText={setCommentText}
               />
-              <TouchableOpacity
-                onPress={postComment}
-                disabled={!commentText.trim()}
-              >
-                <Ionicons
-                  name="send"
-                  size={24}
-                  color={commentText.trim() ? "#FF3B5C" : "#ccc"}
-                />
+              <TouchableOpacity onPress={postComment} disabled={!commentText.trim()}>
+                <Text style={{
+                  color: commentText.trim() ? '#FF3B5C' : '#ccc', 
+                  fontWeight:'bold'
+                }}>
+                  Post
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
-      <GifPickerModal
-        visible={showGifPicker}
-        onClose={() => setShowGifPicker(false)}
-        onSelectGif={handleGifSelect}
+      {/* GIF PICKER MODAL */}
+      <GifPickerModal 
+        visible={showGifPicker} 
+        onClose={() => setShowGifPicker(false)} 
+        onSelectGif={handleGifSelect} 
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "black" },
-  centerContainer: {
+  // --- LAYOUT & CONTAINERS ---
+  container: { 
+    flex: 1, 
+    backgroundColor: "black" 
+  },
+  loaderCenter: {
     flex: 1,
-    backgroundColor: "black",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: 'black',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  topBar: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 100,
+  reelContainer: {
+    width: SCREEN_WIDTH,
+    overflow: 'hidden',
+    backgroundColor: 'black'
   },
-  topBarText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 2,
+  videoWrapper: {
+    flex: 1,
+    justifyContent: 'center'
   },
-  cameraBtn: { position: "absolute", right: 16 },
-  reelContainer: { width, backgroundColor: "black" },
-  videoContainer: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
+
+  // --- HEADER ---
+  header: {
+    position: 'absolute',
+    left: 20,
+    right: 20,
+    zIndex: 50,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    height: 50,
   },
-  video: { width: "100%", height: "100%", position: "absolute" },
-  topGradient: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 120,
+  headerTitle: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 22,
+    textShadowColor: 'rgba(0,0,0,0.3)',
+    textShadowRadius: 4,
+    textShadowOffset: { width: 0, height: 1}
+  },
+  cameraIcon: {
+    padding: 8,
+  },
+
+  // --- OVERLAYS ---
+  centerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 10,
+    pointerEvents: 'none',
+  },
+  playIconContainer: {
+    position: 'absolute',
+  },
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    width: '100%',
   },
   bottomGradient: {
-    position: "absolute",
+    position: 'absolute',
+    bottom: 0,
+    width: '100%',
+    height: 350,
+  },
+
+  // --- UI INTERFACE ---
+  uiContainer: {
+    position: 'absolute',
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    height: 300,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    zIndex: 20,
   },
-  centerIcon: { position: "absolute", zIndex: 20, opacity: 0.8 },
-  overlay: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-    paddingHorizontal: 16,
-    paddingBottom: 20,
+  infoContainer: {
+    flex: 1,
+    paddingRight: 10,
+    marginBottom: 10,
   },
-  content: { flex: 1, marginRight: 60, marginBottom: 10 },
-  userInfo: { marginBottom: 10 },
-  userRow: { flexDirection: "row", alignItems: "center" },
+  actionsContainer: {
+    width: 50,
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+
+  // --- USER INFO ---
+  userRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#FF3B5C",
-    justifyContent: "center",
-    alignItems: "center",
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: 'white',
     marginRight: 10,
-    borderWidth: 1.5,
-    borderColor: "#fff",
-    overflow: "hidden",
   },
-  avatarImage: { width: "100%", height: "100%" },
-  avatarText: { color: "#fff", fontWeight: "700", fontSize: 14 },
   username: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 15,
-    marginRight: 10,
-    textShadowColor: "rgba(0,0,0,0.5)",
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 16,
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowRadius: 3,
   },
   followBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 6,
+    marginLeft: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.8)",
+    borderColor: 'rgba(255,255,255,0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
-  followText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  caption: {
-    color: "#fff",
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 10,
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowRadius: 3,
-  },
-  musicRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  musicText: { color: "#fff", fontSize: 13 },
-  actions: { alignItems: "center", gap: 20, paddingBottom: 10 },
-  actionBtn: { alignItems: "center" },
-  actionLabel: {
-    color: "#fff",
-    marginTop: 5,
+  followText: {
+    color: 'white',
     fontSize: 12,
-    fontWeight: "600",
-    textShadowColor: "rgba(0,0,0,0.5)",
+    fontWeight: '600'
+  },
+  caption: {
+    color: 'white',
+    fontSize: 15,
+    marginBottom: 10,
+    lineHeight: 20,
+    textShadowColor: 'rgba(0,0,0,0.5)',
     textShadowRadius: 2,
   },
-  modalContainer: { flex: 1, justifyContent: "flex-end" },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
-  modalContent: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 15,
-    borderTopRightRadius: 15,
+  hashtag: {
+    fontWeight: '700',
   },
-  modalHandle: {
-    width: 40,
-    height: 4,
-    backgroundColor: "#ccc",
-    alignSelf: "center",
+  musicRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  tickerContainer: {
+    overflow: 'hidden',
+  },
+  musicText: {
+    color: 'white',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+
+  // --- ACTION BUTTONS ---
+  actionButton: {
+    alignItems: 'center',
+    marginBottom: 22,
+  },
+  shadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+  },
+  actionText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowRadius: 3,
+  },
+  vinylContainer: {
     marginTop: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#222',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#333'
+  },
+  vinyl: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+  },
+
+  // --- MODAL ---
+  modalKeyView: { 
+    flex: 1, 
+    justifyContent: 'flex-end' 
+  },
+  modalBackdrop: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)' 
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: 'hidden',
   },
   modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
     borderBottomWidth: 1,
-    borderColor: "#eee",
+    borderColor: '#eee'
   },
-  modalTitle: { fontWeight: "700", fontSize: 16 },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
+  modalTitle: { 
+    fontWeight: 'bold', 
+    fontSize: 16 
   },
-  commentsList: { padding: 15 },
-  commentItem: { flexDirection: "row", marginBottom: 20 },
-  commentAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#FF3B5C",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 10,
-    overflow: "hidden",
+  commentRow: {
+    flexDirection: 'row',
+    padding: 16,
   },
-  commentAvatarText: { color: "#fff", fontWeight: "bold" },
-  commentContent: { flex: 1 },
-  commentHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
+  commentAvatar: { 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    marginRight: 12, 
+    backgroundColor: '#eee' 
   },
-  commentUser: { fontWeight: "700", fontSize: 13 },
-  commentTime: { color: "#999", fontSize: 11 },
-  commentText: { fontSize: 14, color: "#333" },
-  emptyComments: { alignItems: "center", marginTop: 50 },
-  emptyCommentsText: { color: "#999" },
-  commentInputContainer: {
-    flexDirection: "row",
-    padding: 10,
+  commentUser: { 
+    fontWeight: 'bold', 
+    fontSize: 13, 
+    color: '#333', 
+    marginBottom: 2 
+  },
+  commentTime: { 
+    fontWeight: '400', 
+    color: '#999' 
+  },
+  commentBody: { 
+    fontSize: 14, 
+    color: '#111', 
+    lineHeight: 18 
+  },
+  emptyText: { 
+    textAlign: 'center', 
+    marginTop: 40, 
+    color: '#999' 
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
     borderTopWidth: 1,
-    borderColor: "#eee",
-    alignItems: "center",
+    borderColor: '#eee',
+    backgroundColor: 'white',
   },
-  gifButton: { marginRight: 10, padding: 4 },
-  commentInput: {
+  input: {
     flex: 1,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: '#f1f1f1',
     borderRadius: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    marginRight: 10,
-    maxHeight: 80,
+    marginHorizontal: 10,
+    fontSize: 15,
   },
 });
 
