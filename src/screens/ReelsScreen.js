@@ -47,7 +47,7 @@ const ReelItem = React.memo(
     item,
     isActive,
     shouldPlay,
-    viewHeight, // <--- CRITICAL: Receives exact height from parent
+    viewHeight, 
     onLike,
     onComment,
     onShare,
@@ -317,7 +317,7 @@ const ReelItem = React.memo(
       prev.shouldPlay === next.shouldPlay &&
       prev.item._id === next.item._id &&
       prev.item.commentsCount === next.item.commentsCount &&
-      prev.viewHeight === next.viewHeight // Re-render if screen size changes
+      prev.viewHeight === next.viewHeight 
     );
   },
 );
@@ -326,7 +326,7 @@ const ReelItem = React.memo(
 
 const ReelsScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const bottomTabHeight = useBottomTabBarHeight(); // Kept if you need specific calculations
+  const bottomTabHeight = useBottomTabBarHeight(); 
   const isFocused = useIsFocused();
 
   // State
@@ -465,7 +465,7 @@ const ReelsScreen = ({ navigation }) => {
         item={item}
         isActive={index === activeIndex}
         shouldPlay={isFocused}
-        viewHeight={containerHeight} // Pass dynamic height
+        viewHeight={containerHeight} 
         onLike={handleLike}
         onComment={openComments}
         onShare={handleShare}
@@ -494,7 +494,6 @@ const ReelsScreen = ({ navigation }) => {
   return (
     <View
       style={styles.container}
-      // Measure the exact height available for the list
       onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)}
     >
       <StatusBar
@@ -521,13 +520,12 @@ const ReelsScreen = ({ navigation }) => {
           decelerationRate="fast"
           disableIntervalMomentum
           showsVerticalScrollIndicator={false}
-          // Use dynamic height for layout
           getItemLayout={(data, index) => ({
             length: containerHeight,
             offset: containerHeight * index,
             index,
           })}
-          snapToInterval={containerHeight} // Force snap to exact height
+          snapToInterval={containerHeight} 
           snapToAlignment="start"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
