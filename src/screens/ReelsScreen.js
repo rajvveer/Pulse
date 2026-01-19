@@ -28,7 +28,11 @@ import GifPickerModal from "../components/GifPickerModal";
 // --- UTILITY COMPONENTS ---
 
 const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
-  <TouchableOpacity onPress={onPress} style={styles.actionButton} activeOpacity={0.7}>
+  <TouchableOpacity
+    onPress={onPress}
+    style={styles.actionButton}
+    activeOpacity={0.7}
+  >
     <Animated.View style={scale ? { transform: [{ scale }] } : {}}>
       <Ionicons name={icon} size={32} color={color} style={styles.shadow} />
     </Animated.View>
@@ -50,7 +54,7 @@ const ReelItem = React.memo(
     onFollow,
   }) => {
     const insets = useSafeAreaInsets();
-    
+
     // Animation Values
     const heartScale = useRef(new Animated.Value(1)).current;
     const doubleTapOpacity = useRef(new Animated.Value(0)).current;
@@ -58,13 +62,15 @@ const ReelItem = React.memo(
 
     // Local State
     const [isLiked, setIsLiked] = useState(
-      item.isLiked || (item.likes && item.likes.includes(item.currentUserId))
+      item.isLiked || (item.likes && item.likes.includes(item.currentUserId)),
     );
     const [likesCount, setLikesCount] = useState(item.likes?.length || 0);
-    const [isFollowing, setIsFollowing] = useState(item.user?.isFollowing || false);
+    const [isFollowing, setIsFollowing] = useState(
+      item.user?.isFollowing || false,
+    );
     const [isMuted, setIsMuted] = useState(false);
     const [userPaused, setUserPaused] = useState(false);
-    
+
     const lastTap = useRef(null);
     const author = item.author || item.user || {};
 
@@ -90,15 +96,32 @@ const ReelItem = React.memo(
     // Animations
     const animateHeart = () => {
       Animated.sequence([
-        Animated.spring(heartScale, { toValue: 1.3, useNativeDriver: true, speed: 50 }),
-        Animated.spring(heartScale, { toValue: 1, useNativeDriver: true, speed: 50 }),
+        Animated.spring(heartScale, {
+          toValue: 1.3,
+          useNativeDriver: true,
+          speed: 50,
+        }),
+        Animated.spring(heartScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          speed: 50,
+        }),
       ]).start();
     };
 
     const animateDoubleTap = () => {
       Animated.sequence([
-        Animated.timing(doubleTapOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-        Animated.timing(doubleTapOpacity, { toValue: 0, duration: 800, delay: 300, useNativeDriver: true }),
+        Animated.timing(doubleTapOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(doubleTapOpacity, {
+          toValue: 0,
+          duration: 800,
+          delay: 300,
+          useNativeDriver: true,
+        }),
       ]).start();
     };
 
@@ -168,12 +191,27 @@ const ReelItem = React.memo(
 
             {/* Center Animations */}
             <View style={styles.centerOverlay}>
-              <Animated.View style={{ opacity: doubleTapOpacity, transform: [{ scale: 1.5 }] }}>
-                <Ionicons name="heart" size={100} color="rgba(255,255,255,0.9)" />
+              <Animated.View
+                style={{
+                  opacity: doubleTapOpacity,
+                  transform: [{ scale: 1.5 }],
+                }}
+              >
+                <Ionicons
+                  name="heart"
+                  size={100}
+                  color="rgba(255,255,255,0.9)"
+                />
               </Animated.View>
 
-              <Animated.View style={[styles.playIconContainer, { opacity: playIconOpacity }]}>
-                <Ionicons name={userPaused ? "play" : "pause"} size={60} color="rgba(255,255,255,0.8)" />
+              <Animated.View
+                style={[styles.playIconContainer, { opacity: playIconOpacity }]}
+              >
+                <Ionicons
+                  name={userPaused ? "play" : "pause"}
+                  size={60}
+                  color="rgba(255,255,255,0.8)"
+                />
               </Animated.View>
             </View>
 
@@ -188,22 +226,27 @@ const ReelItem = React.memo(
             />
 
             {/* UI Layer */}
-            <View style={[styles.uiContainer, { paddingBottom: Platform.OS === 'android' ? 20 : 10 }]}>
+            <View
+              style={[
+                styles.uiContainer,
+                { paddingBottom: Platform.OS === "android" ? 20 : 10 },
+              ]}
+            >
               {/* Bottom Left Info */}
               <View style={styles.infoContainer}>
                 <View style={styles.userRow}>
-                  <Image 
-                    source={{ uri: author.profile?.avatar || author.avatar }} 
-                    style={styles.avatar} 
+                  <Image
+                    source={{ uri: author.profile?.avatar || author.avatar }}
+                    style={styles.avatar}
                     contentFit="cover"
                   />
                   <Text style={styles.username}>@{author.username}</Text>
                   {!isFollowing && (
-                    <TouchableOpacity 
-                      onPress={() => { 
-                        setIsFollowing(true); 
-                        onFollow(author._id); 
-                      }} 
+                    <TouchableOpacity
+                      onPress={() => {
+                        setIsFollowing(true);
+                        onFollow(author._id);
+                      }}
                       style={styles.followBtn}
                     >
                       <Text style={styles.followText}>Follow</Text>
@@ -212,14 +255,17 @@ const ReelItem = React.memo(
                 </View>
 
                 <Text style={styles.caption} numberOfLines={2}>
-                  {item.caption} <Text style={styles.hashtag}>#viral #trending</Text>
+                  {item.caption}{" "}
+                  <Text style={styles.hashtag}>#viral #trending</Text>
                 </Text>
 
                 {item.music && (
                   <View style={styles.musicRow}>
                     <Ionicons name="musical-notes" size={14} color="#fff" />
                     <View style={styles.tickerContainer}>
-                      <Text style={styles.musicText}>{item.music} • Original Audio</Text>
+                      <Text style={styles.musicText}>
+                        {item.music} • Original Audio
+                      </Text>
                     </View>
                   </View>
                 )}
@@ -227,33 +273,36 @@ const ReelItem = React.memo(
 
               {/* Bottom Right Actions */}
               <View style={styles.actionsContainer}>
-                <ActionButton 
-                  icon={isLiked ? "heart" : "heart-outline"} 
-                  color={isLiked ? "#FF3B5C" : "#fff"} 
-                  label={formatNumber(likesCount)} 
+                <ActionButton
+                  icon={isLiked ? "heart" : "heart-outline"}
+                  color={isLiked ? "#FF3B5C" : "#fff"}
+                  label={formatNumber(likesCount)}
                   onPress={handleLikePress}
                   scale={heartScale}
                 />
 
-                <ActionButton 
-                  icon="chatbubble-ellipses-outline" 
-                  label={formatNumber(item.commentsCount || 0)} 
-                  onPress={() => onComment(item)} 
+                <ActionButton
+                  icon="chatbubble-ellipses-outline"
+                  label={formatNumber(item.commentsCount || 0)}
+                  onPress={() => onComment(item)}
                 />
 
-                <ActionButton 
-                  icon="paper-plane-outline" 
-                  label="Share" 
-                  onPress={() => onShare(item)} 
+                <ActionButton
+                  icon="paper-plane-outline"
+                  label="Share"
+                  onPress={() => onShare(item)}
                 />
 
-                <ActionButton 
-                  icon={isMuted ? "volume-mute-outline" : "volume-high-outline"} 
-                  onPress={() => setIsMuted(!isMuted)} 
+                <ActionButton
+                  icon={isMuted ? "volume-mute-outline" : "volume-high-outline"}
+                  onPress={() => setIsMuted(!isMuted)}
                 />
 
                 <View style={styles.vinylContainer}>
-                  <Image source={{ uri: author.profile?.avatar }} style={styles.vinyl} />
+                  <Image
+                    source={{ uri: author.profile?.avatar }}
+                    style={styles.vinyl}
+                  />
                 </View>
               </View>
             </View>
@@ -270,7 +319,7 @@ const ReelItem = React.memo(
       prev.item.commentsCount === next.item.commentsCount &&
       prev.viewHeight === next.viewHeight // Re-render if screen size changes
     );
-  }
+  },
 );
 
 // --- MAIN SCREEN ---
@@ -285,7 +334,7 @@ const ReelsScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
-  
+
   // DYNAMIC HEIGHT STATE
   const [containerHeight, setContainerHeight] = useState(null);
 
@@ -303,16 +352,16 @@ const ReelsScreen = ({ navigation }) => {
       const res = await api.get("/reels/feed");
       const data = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setReels(data);
-    } catch (e) { 
-      console.error("Error fetching reels:", e); 
-    } finally { 
+    } catch (e) {
+      console.error("Error fetching reels:", e);
+    } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  useEffect(() => { 
-    fetchReels(); 
+  useEffect(() => {
+    fetchReels();
   }, []);
 
   const handleRefresh = useCallback(() => {
@@ -322,15 +371,27 @@ const ReelsScreen = ({ navigation }) => {
 
   // Action Handlers
   const handleLike = useCallback(async (id) => {
-    try { await api.post(`/reels/${id}/like`); } catch (e) { console.error(e); }
+    try {
+      await api.post(`/reels/${id}/like`);
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
   const handleFollow = useCallback(async (id) => {
-    try { await api.post(`/users/${id}/follow`); } catch (e) { console.error(e); }
+    try {
+      await api.post(`/users/${id}/follow`);
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
   const handleShare = useCallback(async (item) => {
-    try { await Share.share({ message: `Check out this reel! ${item.videoUrl}` }); } catch (e) { console.error(e); }
+    try {
+      await Share.share({ message: `Check out this reel! ${item.videoUrl}` });
+    } catch (e) {
+      console.error(e);
+    }
   }, []);
 
   const openComments = useCallback(async (reel) => {
@@ -340,31 +401,52 @@ const ReelsScreen = ({ navigation }) => {
     try {
       const res = await api.get(`/reels/${reel._id}/comments`);
       setComments(res.data.data || []);
-    } catch(e) { 
+    } catch (e) {
       console.error(e);
-      setComments([]); 
-    } finally { 
-      setLoadingComments(false); 
+      setComments([]);
+    } finally {
+      setLoadingComments(false);
     }
   }, []);
 
   const postComment = async () => {
     if (!commentText.trim()) return;
     try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, { content: commentText });
+      const res = await api.post(`/reels/${activeReel._id}/comments`, {
+        content: commentText,
+      });
       setComments([res.data.data, ...comments]);
       setCommentText("");
-      setReels(prev => prev.map(r => r._id === activeReel._id ? {...r, commentsCount: (r.commentsCount || 0) + 1} : r));
-    } catch(e) { console.error(e); }
+      setReels((prev) =>
+        prev.map((r) =>
+          r._id === activeReel._id
+            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
+            : r,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   const handleGifSelect = async (gif) => {
     setShowGifPicker(false);
     try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, { content: gif.url, type: 'gif' });
+      const res = await api.post(`/reels/${activeReel._id}/comments`, {
+        content: gif.url,
+        type: "gif",
+      });
       setComments([res.data.data, ...comments]);
-      setReels(prev => prev.map(r => r._id === activeReel._id ? {...r, commentsCount: (r.commentsCount || 0) + 1} : r));
-    } catch(e) { console.error(e); }
+      setReels((prev) =>
+        prev.map((r) =>
+          r._id === activeReel._id
+            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
+            : r,
+        ),
+      );
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // View Config
@@ -377,18 +459,29 @@ const ReelsScreen = ({ navigation }) => {
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 80 }).current;
 
   // Render Item
-  const renderItem = useCallback(({ item, index }) => (
-    <ReelItem
-      item={item}
-      isActive={index === activeIndex}
-      shouldPlay={isFocused}
-      viewHeight={containerHeight} // Pass dynamic height
-      onLike={handleLike}
-      onComment={openComments}
-      onShare={handleShare}
-      onFollow={handleFollow}
-    />
-  ), [activeIndex, isFocused, containerHeight, handleLike, openComments, handleShare, handleFollow]);
+  const renderItem = useCallback(
+    ({ item, index }) => (
+      <ReelItem
+        item={item}
+        isActive={index === activeIndex}
+        shouldPlay={isFocused}
+        viewHeight={containerHeight} // Pass dynamic height
+        onLike={handleLike}
+        onComment={openComments}
+        onShare={handleShare}
+        onFollow={handleFollow}
+      />
+    ),
+    [
+      activeIndex,
+      isFocused,
+      containerHeight,
+      handleLike,
+      openComments,
+      handleShare,
+      handleFollow,
+    ],
+  );
 
   if (loading && reels.length === 0) {
     return (
@@ -399,12 +492,16 @@ const ReelsScreen = ({ navigation }) => {
   }
 
   return (
-    <View 
+    <View
       style={styles.container}
       // Measure the exact height available for the list
       onLayout={(e) => setContainerHeight(e.nativeEvent.layout.height)}
     >
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+      <StatusBar
+        barStyle="light-content"
+        translucent
+        backgroundColor="transparent"
+      />
 
       {/* Header Overlay */}
       <View style={[styles.header, { top: insets.top }]}>
@@ -437,29 +534,34 @@ const ReelsScreen = ({ navigation }) => {
           initialNumToRender={1}
           maxToRenderPerBatch={2}
           windowSize={3}
-          removeClippedSubviews={Platform.OS === 'android'}
+          removeClippedSubviews={Platform.OS === "android"}
           refreshing={refreshing}
           onRefresh={handleRefresh}
         />
       )}
 
       {/* Comments Modal */}
-      <Modal 
-        visible={showComments} 
-        animationType="slide" 
-        transparent 
+      <Modal
+        visible={showComments}
+        animationType="slide"
+        transparent
         onRequestClose={() => setShowComments(false)}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"} 
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={styles.modalKeyView}
         >
-          <TouchableOpacity 
-            style={styles.modalBackdrop} 
-            onPress={() => setShowComments(false)} 
-            activeOpacity={1} 
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            onPress={() => setShowComments(false)}
+            activeOpacity={1}
           />
-          <View style={[styles.modalContent, { height: containerHeight ? containerHeight * 0.7 : 500 }]}>
+          <View
+            style={[
+              styles.modalContent,
+              { height: containerHeight ? containerHeight * 0.7 : 500 },
+            ]}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Comments</Text>
               <TouchableOpacity onPress={() => setShowComments(false)}>
@@ -468,26 +570,32 @@ const ReelsScreen = ({ navigation }) => {
             </View>
 
             {loadingComments ? (
-              <ActivityIndicator style={{marginTop: 20}} color="#FF3B5C" />
+              <ActivityIndicator style={{ marginTop: 20 }} color="#FF3B5C" />
             ) : (
               <FlatList
                 data={comments}
-                keyExtractor={i => i._id}
-                renderItem={({item}) => (
+                keyExtractor={(i) => i._id}
+                renderItem={({ item }) => (
                   <View style={styles.commentRow}>
-                    <Image 
-                      source={{uri: item.author?.profile?.avatar}} 
-                      style={styles.commentAvatar} 
+                    <Image
+                      source={{ uri: item.author?.profile?.avatar }}
+                      style={styles.commentAvatar}
                     />
-                    <View style={{flex: 1}}>
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.commentUser}>
-                        @{item.author?.username} 
+                        @{item.author?.username}
                         <Text style={styles.commentTime}> • 2h</Text>
                       </Text>
-                      {item.type === 'gif' || (item.content && item.content.includes('.gif')) ? (
-                        <Image 
-                          source={{uri: item.content}} 
-                          style={{width: 100, height: 100, borderRadius: 8, marginTop: 4}} 
+                      {item.type === "gif" ||
+                      (item.content && item.content.includes(".gif")) ? (
+                        <Image
+                          source={{ uri: item.content }}
+                          style={{
+                            width: 100,
+                            height: 100,
+                            borderRadius: 8,
+                            marginTop: 4,
+                          }}
                         />
                       ) : (
                         <Text style={styles.commentBody}>{item.content}</Text>
@@ -496,24 +604,41 @@ const ReelsScreen = ({ navigation }) => {
                   </View>
                 )}
                 ListEmptyComponent={
-                  <Text style={styles.emptyText}>No comments yet. Say something!</Text>
+                  <Text style={styles.emptyText}>
+                    No comments yet. Say something!
+                  </Text>
                 }
               />
             )}
 
-            <View style={[styles.inputContainer, { paddingBottom: insets.bottom + 10 }]}>
+            <View
+              style={[
+                styles.inputContainer,
+                { paddingBottom: insets.bottom + 10 },
+              ]}
+            >
               <TouchableOpacity onPress={() => setShowGifPicker(true)}>
                 <Ionicons name="images-outline" size={28} color="#555" />
               </TouchableOpacity>
-              <TextInput 
-                placeholder="Add a comment..." 
-                style={styles.input} 
-                value={commentText} 
-                onChangeText={setCommentText} 
+              <TextInput
+                placeholder="Add a comment..."
+                style={styles.input}
+                value={commentText}
+                onChangeText={setCommentText}
                 placeholderTextColor="#999"
               />
-              <TouchableOpacity onPress={postComment} disabled={!commentText.trim()}>
-                <Text style={{color: commentText.trim() ? '#FF3B5C' : '#ccc', fontWeight:'bold'}}>Post</Text>
+              <TouchableOpacity
+                onPress={postComment}
+                disabled={!commentText.trim()}
+              >
+                <Text
+                  style={{
+                    color: commentText.trim() ? "#FF3B5C" : "#ccc",
+                    fontWeight: "bold",
+                  }}
+                >
+                  Post
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -521,10 +646,10 @@ const ReelsScreen = ({ navigation }) => {
       </Modal>
 
       {/* GIF Picker Modal */}
-      <GifPickerModal 
-        visible={showGifPicker} 
-        onClose={() => setShowGifPicker(false)} 
-        onSelectGif={handleGifSelect} 
+      <GifPickerModal
+        visible={showGifPicker}
+        onClose={() => setShowGifPicker(false)}
+        onSelectGif={handleGifSelect}
       />
     </View>
   );
@@ -533,68 +658,192 @@ const ReelsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   // Layout
   container: { flex: 1, backgroundColor: "black" },
-  loaderCenter: { flex: 1, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' },
-  
+  loaderCenter: {
+    flex: 1,
+    backgroundColor: "black",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
   // Reel
-  reelContainer: { width: '100%', overflow: 'hidden', backgroundColor: 'black' },
-  videoWrapper: { flex: 1, justifyContent: 'center' },
+  reelContainer: {
+    width: "100%",
+    overflow: "hidden",
+    backgroundColor: "black",
+  },
+  videoWrapper: { flex: 1, justifyContent: "center" },
 
   // Header
   header: {
-    position: 'absolute', left: 20, right: 20, zIndex: 50,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: 50,
+    position: "absolute",
+    left: 20,
+    right: 20,
+    zIndex: 50,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    height: 50,
   },
-  headerTitle: { color: 'white', fontWeight: '800', fontSize: 22, textShadowColor: 'rgba(0,0,0,0.3)', textShadowRadius: 4 },
+  headerTitle: {
+    color: "white",
+    fontWeight: "800",
+    fontSize: 22,
+    textShadowColor: "rgba(0,0,0,0.3)",
+    textShadowRadius: 4,
+  },
   cameraIcon: { padding: 8 },
 
   // Overlay
-  centerOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center', zIndex: 10, pointerEvents: 'none' },
-  playIconContainer: { position: 'absolute' },
-  topGradient: { position: 'absolute', top: 0, width: '100%' },
-  bottomGradient: { position: 'absolute', bottom: 0, width: '100%', height: 350 },
+  centerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+    pointerEvents: "none",
+  },
+  playIconContainer: { position: "absolute" },
+  topGradient: { position: "absolute", top: 0, width: "100%" },
+  bottomGradient: {
+    position: "absolute",
+    bottom: 0,
+    width: "100%",
+    height: 350,
+  },
 
   // UI
   uiContainer: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'flex-end', zIndex: 20,
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    zIndex: 20,
     paddingHorizontal: 16,
   },
   infoContainer: { flex: 1, paddingRight: 10, marginBottom: 10 },
-  actionsContainer: { width: 50, alignItems: 'center', marginBottom: 20 },
+  actionsContainer: { width: 50, alignItems: "center", marginBottom: 20 },
 
   // User Info
-  userRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  avatar: { width: 34, height: 34, borderRadius: 17, borderWidth: 1, borderColor: 'white', marginRight: 10 },
-  username: { color: 'white', fontWeight: '700', fontSize: 16, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 3 },
-  followBtn: { marginLeft: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.6)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  followText: { color: 'white', fontSize: 12, fontWeight: '600' },
-  caption: { color: 'white', fontSize: 15, marginBottom: 10, lineHeight: 20, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 2 },
-  hashtag: { fontWeight: '700' },
-  musicRow: { flexDirection: 'row', alignItems: 'center' },
-  tickerContainer: { overflow: 'hidden' },
-  musicText: { color: 'white', marginLeft: 8, fontSize: 14 },
+  userRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: "white",
+    marginRight: 10,
+  },
+  username: {
+    color: "white",
+    fontWeight: "700",
+    fontSize: 16,
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowRadius: 3,
+  },
+  followBtn: {
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.6)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  followText: { color: "white", fontSize: 12, fontWeight: "600" },
+  caption: {
+    color: "white",
+    fontSize: 15,
+    marginBottom: 10,
+    lineHeight: 20,
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowRadius: 2,
+  },
+  hashtag: { fontWeight: "700" },
+  musicRow: { flexDirection: "row", alignItems: "center" },
+  tickerContainer: { overflow: "hidden" },
+  musicText: { color: "white", marginLeft: 8, fontSize: 14 },
 
   // Actions
-  actionButton: { alignItems: 'center', marginBottom: 22 },
-  shadow: { shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4 },
-  actionText: { color: 'white', fontSize: 12, fontWeight: '600', marginTop: 4, textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 3 },
-  vinylContainer: { marginTop: 10, width: 40, height: 40, borderRadius: 20, backgroundColor: '#222', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#333' },
+  actionButton: { alignItems: "center", marginBottom: 22 },
+  shadow: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+  },
+  actionText: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 4,
+    textShadowColor: "rgba(0,0,0,0.5)",
+    textShadowRadius: 3,
+  },
+  vinylContainer: {
+    marginTop: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#222",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#333",
+  },
   vinyl: { width: 26, height: 26, borderRadius: 13 },
 
   // Modal
-  modalKeyView: { flex: 1, justifyContent: 'flex-end' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
-  modalContent: { backgroundColor: 'white', borderTopLeftRadius: 16, borderTopRightRadius: 16, overflow: 'hidden' },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderColor: '#eee' },
-  modalTitle: { fontWeight: 'bold', fontSize: 16 },
-  commentRow: { flexDirection: 'row', padding: 16 },
-  commentAvatar: { width: 36, height: 36, borderRadius: 18, marginRight: 12, backgroundColor: '#eee' },
-  commentUser: { fontWeight: 'bold', fontSize: 13, color: '#333', marginBottom: 2 },
-  commentTime: { fontWeight: '400', color: '#999' },
-  commentBody: { fontSize: 14, color: '#111', lineHeight: 18 },
-  emptyText: { textAlign: 'center', marginTop: 40, color: '#999' },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', padding: 12, borderTopWidth: 1, borderColor: '#eee', backgroundColor: 'white' },
-  input: { flex: 1, backgroundColor: '#f1f1f1', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, marginHorizontal: 10, fontSize: 15 },
+  modalKeyView: { flex: 1, justifyContent: "flex-end" },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
+  modalContent: {
+    backgroundColor: "white",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    overflow: "hidden",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderColor: "#eee",
+  },
+  modalTitle: { fontWeight: "bold", fontSize: 16 },
+  commentRow: { flexDirection: "row", padding: 16 },
+  commentAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    marginRight: 12,
+    backgroundColor: "#eee",
+  },
+  commentUser: {
+    fontWeight: "bold",
+    fontSize: 13,
+    color: "#333",
+    marginBottom: 2,
+  },
+  commentTime: { fontWeight: "400", color: "#999" },
+  commentBody: { fontSize: 14, color: "#111", lineHeight: 18 },
+  emptyText: { textAlign: "center", marginTop: 40, color: "#999" },
+  inputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderTopWidth: 1,
+    borderColor: "#eee",
+    backgroundColor: "white",
+  },
+  input: {
+    flex: 1,
+    backgroundColor: "#f1f1f1",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginHorizontal: 10,
+    fontSize: 15,
+  },
 });
 
 export default ReelsScreen;
