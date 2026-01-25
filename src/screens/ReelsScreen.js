@@ -24,8 +24,8 @@ import { useIsFocused } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "../services/api";
 import GifPickerModal from "../components/GifPickerModal";
+import { getTimeAgo } from "../utils/timeAgo"; 
 
-// --- UTILITY COMPONENTS ---
 
 const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
   <TouchableOpacity
@@ -39,6 +39,7 @@ const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
     {label && <Text style={styles.actionText}>{label}</Text>}
   </TouchableOpacity>
 );
+
 
 // --- SINGLE REEL ITEM ---
 
@@ -236,7 +237,7 @@ const ReelItem = React.memo(
               <View style={styles.infoContainer}>
                 <View style={styles.userRow}>
                   <Image
-                    source={{ uri: author.profile?.avatar || author.avatar }}
+                    source={{ uri: author.avatar || 'https://via.placeholder.com/150' }}
                     style={styles.avatar}
                     contentFit="cover"
                   />
@@ -300,7 +301,7 @@ const ReelItem = React.memo(
 
                 <View style={styles.vinylContainer}>
                   <Image
-                    source={{ uri: author.profile?.avatar }}
+                    source={{ uri: author.avatar || 'https://via.placeholder.com/150' }}
                     style={styles.vinyl}
                   />
                 </View>
@@ -321,6 +322,7 @@ const ReelItem = React.memo(
     );
   },
 );
+
 
 // --- MAIN SCREEN ---
 
@@ -414,6 +416,7 @@ const ReelsScreen = ({ navigation }) => {
     try {
       const res = await api.post(`/reels/${activeReel._id}/comments`, {
         content: commentText,
+        type: 'text',
       });
       setComments([res.data.data, ...comments]);
       setCommentText("");
@@ -482,6 +485,35 @@ const ReelsScreen = ({ navigation }) => {
       handleFollow,
     ],
   );
+
+  // ✅ RENDER COMMENT ITEM WITH TIME AGO
+  const renderCommentItem = useCallback(({ item }) => (
+    <View style={styles.commentRow}>
+      <Image
+        source={{ uri: item.author?.avatar || 'https://via.placeholder.com/150' }}
+        style={styles.commentAvatar}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.commentUser}>
+          @{item.author?.username}
+          <Text style={styles.commentTime}> • {getTimeAgo(item.createdAt)}</Text>
+        </Text>
+        {item.type === "gif" || (item.content && item.content.includes(".gif")) ? (
+          <Image
+            source={{ uri: item.content }}
+            style={{
+              width: 100,
+              height: 100,
+              borderRadius: 8,
+              marginTop: 4,
+            }}
+          />
+        ) : (
+          <Text style={styles.commentBody}>{item.content}</Text>
+        )}
+      </View>
+    </View>
+  ), []);
 
   if (loading && reels.length === 0) {
     return (
@@ -573,34 +605,7 @@ const ReelsScreen = ({ navigation }) => {
               <FlatList
                 data={comments}
                 keyExtractor={(i) => i._id}
-                renderItem={({ item }) => (
-                  <View style={styles.commentRow}>
-                    <Image
-                      source={{ uri: item.author?.profile?.avatar }}
-                      style={styles.commentAvatar}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.commentUser}>
-                        @{item.author?.username}
-                        <Text style={styles.commentTime}> • 2h</Text>
-                      </Text>
-                      {item.type === "gif" ||
-                      (item.content && item.content.includes(".gif")) ? (
-                        <Image
-                          source={{ uri: item.content }}
-                          style={{
-                            width: 100,
-                            height: 100,
-                            borderRadius: 8,
-                            marginTop: 4,
-                          }}
-                        />
-                      ) : (
-                        <Text style={styles.commentBody}>{item.content}</Text>
-                      )}
-                    </View>
-                  </View>
-                )}
+                renderItem={renderCommentItem}
                 ListEmptyComponent={
                   <Text style={styles.emptyText}>
                     No comments yet. Say something!

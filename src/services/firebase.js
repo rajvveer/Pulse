@@ -4,7 +4,7 @@ import { getAuth } from "firebase/auth";
 
 // The configuration you found earlier
 const firebaseConfig = {
-  apiKey: "AIzaSyDoUzSFMaLBaTerVsZg9gLZxW_bsyePXeo", // <--- Your Web API Key
+  apiKey: "AIzaSyDoUzSFMaLBaTerVsZg9gLZxW_bsyePXeo", 
   authDomain: "pulse-f591a.firebaseapp.com",
   projectId: "pulse-f591a",
   storageBucket: "pulse-f591a.firebasestorage.app",
