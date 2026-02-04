@@ -1,14 +1,14 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// const API_URL = 'https://pulse-backend-262s.onrender.com/api/v1';
-const API_URL = 'http://192.168.1.9:3000/api/v1';
+const API_URL = 'http://192.168.1.4:3000/api/v1';
 
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 10000,
 });
 
 // --- CONCURRENCY HANDLERS ---
@@ -26,7 +26,9 @@ const processQueue = (error, token = null) => {
   failedQueue = [];
 };
 
-// ✅ Request Interceptor
+// ============================================================
+// 1️⃣ REQUEST INTERCEPTOR (Attach Token)
+// ============================================================
 api.interceptors.request.use(
   async (config) => {
     const token = await AsyncStorage.getItem('accessToken');
@@ -38,7 +40,9 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// ✅ Response Interceptor
+// ============================================================
+// 2️⃣ RESPONSE INTERCEPTOR (Handle 401 & Refresh)
+// ============================================================
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -46,9 +50,11 @@ api.interceptors.response.use(
 
     // IF 401 Unauthorized AND NOT ALREADY RETRIED
     if (error.response?.status === 401 && !originalRequest._retry) {
-      
-      // 1. If already refreshing, queue this request
+
+      console.log('⚠️ [API] 401 Unauthorized detected. Starting refresh flow...');
+
       if (isRefreshing) {
+        console.log('⏳ [API] Refresh already in progress, queuing request...');
         return new Promise(function (resolve, reject) {
           failedQueue.push({ resolve, reject });
         })
@@ -66,43 +72,68 @@ api.interceptors.response.use(
         const refreshToken = await AsyncStorage.getItem('refreshToken');
 
         if (!refreshToken) {
+          console.error('❌ [API] No refresh token found in storage.');
           throw new Error('No refresh token available');
         }
 
-        // 2. Refresh Token Call
-        // Note: We use axios.post (default instance) to avoid infinite loops with 'api' instance
+        console.log('🔄 [API] Calling /auth/refresh-token...');
+
+        // Call backend (Use axios.post to avoid circular loop)
         const response = await axios.post(`${API_URL}/auth/refresh-token`, {
           refreshToken,
         });
 
-        // ⚠️ CRITICAL FIX: Adjusted for your backend structure (res.data.data)
-        // Assuming backend sends: { success: true, data: { accessToken: "...", refreshToken: "..." } }
-        const { accessToken, refreshToken: newRefreshToken } = response.data.data || response.data;
+        // 🔍 DEBUG: Log the exact structure backend sent
+        console.log('📩 [API] Refresh Response Payload:', JSON.stringify(response.data, null, 2));
 
-        if (!accessToken) throw new Error("Backend didn't return access token");
+        // ✅ HANDLE YOUR BACKEND STRUCTURE
+        // Pattern: { success: true, tokens: { accessToken: "...", refreshToken: "..." } }
+        const dataSource = response.data.data || response.data;
 
-        // 3. Save new tokens
+        const accessToken =
+          dataSource.tokens?.accessToken || // Nested in tokens object (Your Backend)
+          dataSource.accessToken ||         // Flat
+          dataSource.token;                 // Alternative
+
+        const newRefreshToken =
+          dataSource.tokens?.refreshToken ||
+          dataSource.refreshToken;
+
+        // Logging success
+        if (accessToken) {
+          console.log('✅ [API] NEW Access Token received!');
+        } else {
+          console.error('❌ [API] Critical: Access Token MISSING in response!');
+          throw new Error("Backend didn't return access token");
+        }
+
+        if (newRefreshToken) {
+          console.log('✅ [API] NEW Refresh Token received (Rotating).');
+        } else {
+          console.log('ℹ️ [API] No new Refresh Token sent (Reusing old one).');
+        }
+
+        // Save new tokens
         await AsyncStorage.setItem('accessToken', accessToken);
         if (newRefreshToken) {
           await AsyncStorage.setItem('refreshToken', newRefreshToken);
         }
 
-        // 4. Process the Queue (Retry all failed requests)
+        // Process Queue
         processQueue(null, accessToken);
-        
-        // 5. Retry the original request
+
+        // Retry Original Request
+        console.log('🚀 [API] Retrying original failed request...');
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
 
       } catch (refreshError) {
-        // If refresh fails, kill the queue and logout
         processQueue(refreshError, null);
-        
-        console.error('❌ Session expired:', refreshError.message);
+        console.error('💀 [API] Session expired completely:', refreshError.message);
+
+        // Force logout to clean up bad state
         await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
-        
-        // Optional: Trigger a Redux action here or EventEmit to force UI to Login Screen
-        
+
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

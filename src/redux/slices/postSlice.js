@@ -13,19 +13,21 @@ const initialState = {
 /**
  * Thunk to fetch Global Feed posts.
  * Supports Pagination: Pass { page: 1 } to refresh, or { page: 2 } to load more.
+ * Supports Vibe filtering: Pass { vibe: 'chill' } for mood-based filtering
  */
 export const fetchGlobalPosts = createAsyncThunk(
   'posts/fetchGlobalPosts',
-  async ({ page = 1, limit = 10 } = {}, thunkAPI) => {
+  async ({ page = 1, limit = 10, vibe = 'auto' } = {}, thunkAPI) => {
     try {
-      // Pass page and limit query params to backend
-      const response = await api.get(`/feed/global?page=${page}&limit=${limit}`);
-      
+      // Pass page, limit and vibe query params to backend
+      const response = await api.get(`/feed/home?page=${page}&limit=${limit}&vibe=${vibe}`);
+
       // Return data AND the page number so the reducer knows how to handle it
-      return { 
+      return {
         data: response.data.data, // The array of posts
-        page: page 
-      }; 
+        page: page,
+        vibe: response.data.vibe || vibe
+      };
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'Failed to load feed.';
       return thunkAPI.rejectWithValue(message);
@@ -48,7 +50,7 @@ const postSlice = createSlice({
     likePostOptimistic: (state, action) => {
       const { postId } = action.payload;
       const post = state.posts.find(p => p._id === postId);
-      
+
       if (post) {
         if (post.isLiked) {
           // Unlike

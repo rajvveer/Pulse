@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
 import api from '../../services/api';
+import { useGoogleAuth, getGoogleUserInfo, getDeviceId } from '../../services/firebase';
 
 const { width } = Dimensions.get('window');
 
@@ -51,13 +52,17 @@ const LoginScreen = () => {
 
   const [identifier, setIdentifier] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  
+
+  // Google Auth Hook (Expo)
+  const [request, response, promptAsync] = useGoogleAuth();
+
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(50)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.3)).current; // For the logo pop
+  const scaleAnim = React.useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -79,11 +84,22 @@ const LoginScreen = () => {
     ]).start();
   }, []);
 
+  // Handle Google Auth Response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      handleGoogleAuthSuccess(response.authentication.accessToken);
+    } else if (response?.type === 'error') {
+      setGoogleLoading(false);
+      setError('Google sign in failed');
+    } else if (response?.type === 'dismiss') {
+      setGoogleLoading(false);
+    }
+  }, [response]);
+
   // ==================== FIXED LOGIC ====================
   const method = useMemo(() => {
     const trimmed = identifier.trim();
     if (!trimmed) return null;
-    // FIX: Only switch to phone mode if it explicitly starts with a number or '+'
     const isPhoneStart = /^[0-9+]/.test(trimmed);
     return isPhoneStart ? 'phone' : 'email';
   }, [identifier]);
@@ -92,9 +108,10 @@ const LoginScreen = () => {
     if (error) setError('');
   }, [identifier]);
 
+  // ==================== OTP AUTH ====================
   const handleInitiateAuth = async () => {
     const trimmed = identifier.trim();
-    
+
     if (!trimmed) {
       setError('Please enter your email or phone number');
       return;
@@ -104,7 +121,7 @@ const LoginScreen = () => {
       setError('Please enter a valid email address');
       return;
     }
-    
+
     if (method === 'phone' && !validatePhone(trimmed)) {
       setError('Please enter a valid 10-digit phone number');
       return;
@@ -135,22 +152,78 @@ const LoginScreen = () => {
     }
   };
 
+  // ==================== GOOGLE SIGN-IN ====================
+  const handleGoogleSignIn = () => {
+    setGoogleLoading(true);
+    setError('');
+    promptAsync();
+  };
+
+  const handleGoogleAuthSuccess = async (accessToken) => {
+    try {
+      // Get user info from Google
+      const userInfo = await getGoogleUserInfo(accessToken);
+
+      // Get device ID
+      const deviceId = await getDeviceId();
+
+      // Send to backend - using access token approach
+      const response = await api.post('/auth/firebase-login', {
+        idToken: accessToken, // We send access token, backend should verify with Google
+        email: userInfo.email,
+        name: userInfo.name,
+        picture: userInfo.picture,
+        googleId: userInfo.id,
+        deviceId,
+        platform: Platform.OS,
+        deviceName: `${userInfo.name || 'User'}'s Device`,
+      });
+
+      const { accessToken: appToken, refreshToken, user: userData, requiresUsername } = response.data;
+
+      // Store tokens
+      await AsyncStorage.setItem('accessToken', appToken);
+      await AsyncStorage.setItem('refreshToken', refreshToken);
+
+      // Navigate based on whether username is set
+      if (requiresUsername) {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'CreateUsername', params: { tempToken: appToken } }],
+        });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Main' }],
+        });
+      }
+
+    } catch (error) {
+      console.error('Google Auth Error:', error);
+      const errorMessage = error.response?.data?.error || 'Google sign in failed';
+      setError(errorMessage);
+      Alert.alert('Sign In Failed', errorMessage);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <Animated.View 
+      <Animated.View
         style={[
           styles.content,
           { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
         ]}
       >
-        {/* LOGO SECTION RESTORED */}
+        {/* LOGO SECTION */}
         <View style={styles.logoContainer}>
-          <Animated.View 
+          <Animated.View
             style={[
-              styles.logoCircle, 
-              { 
+              styles.logoCircle,
+              {
                 backgroundColor: theme.colors.primary,
-                transform: [{ scale: scaleAnim }] // Pop animation
+                transform: [{ scale: scaleAnim }]
               }
             ]}
           >
@@ -176,7 +249,6 @@ const LoginScreen = () => {
               backgroundColor: isDark ? '#1A1A1A' : '#F7F7F8',
               borderColor: error ? '#FF4B4B' : isFocused ? theme.colors.primary : 'transparent',
               borderWidth: 2,
-              // Shadow logic
               shadowColor: isFocused ? theme.colors.primary : '#000',
               shadowOpacity: isFocused ? 0.15 : 0,
               shadowRadius: 10,
@@ -195,10 +267,10 @@ const LoginScreen = () => {
               placeholderTextColor={theme.colors.textSecondary}
               value={identifier}
               onChangeText={setIdentifier}
-              keyboardType="email-address" // Prevents flickering
+              keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
-              editable={!loading}
+              editable={!loading && !googleLoading}
               returnKeyType="done"
               onSubmitEditing={handleInitiateAuth}
               onFocus={() => setIsFocused(true)}
@@ -213,18 +285,18 @@ const LoginScreen = () => {
             ) : null}
           </View>
 
-          {/* Modern Button */}
+          {/* Continue Button */}
           <TouchableOpacity
             style={[
-              styles.loginButton, 
-              { 
+              styles.loginButton,
+              {
                 backgroundColor: theme.colors.primary,
-                opacity: (loading || !identifier.trim()) ? 0.6 : 1,
+                opacity: (loading || googleLoading || !identifier.trim()) ? 0.6 : 1,
                 shadowColor: theme.colors.primary,
               }
             ]}
             onPress={handleInitiateAuth}
-            disabled={loading || !identifier.trim()}
+            disabled={loading || googleLoading || !identifier.trim()}
             activeOpacity={0.8}
           >
             {loading ? (
@@ -233,13 +305,46 @@ const LoginScreen = () => {
               <Text style={styles.loginButtonText}>Continue</Text>
             )}
           </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+            <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>or</Text>
+            <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+          </View>
+
+          {/* Google Sign-In Button */}
+          <TouchableOpacity
+            style={[
+              styles.googleButton,
+              {
+                backgroundColor: isDark ? '#1A1A1A' : '#FFFFFF',
+                borderColor: isDark ? '#333' : '#E0E0E0',
+                opacity: (googleLoading || !request) ? 0.7 : 1,
+              }
+            ]}
+            onPress={handleGoogleSignIn}
+            disabled={loading || googleLoading || !request}
+            activeOpacity={0.8}
+          >
+            {googleLoading ? (
+              <ActivityIndicator color={theme.colors.text} />
+            ) : (
+              <>
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={[styles.googleButtonText, { color: theme.colors.text }]}>
+                  Continue with Google
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
 
         {/* Footer */}
         <View style={styles.footer}>
-           <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
-             Secure Login with Pulse
-           </Text>
+          <Text style={[styles.footerText, { color: theme.colors.textSecondary }]}>
+            Secure Login with Pulse
+          </Text>
         </View>
 
       </Animated.View>
@@ -256,13 +361,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     justifyContent: 'center',
   },
-  // LOGO STYLES RESTORED & IMPROVED
   logoContainer: {
     alignItems: 'center',
     marginBottom: 40,
   },
   logoCircle: {
-    width: 90, // Slightly bigger for modern feel
+    width: 90,
     height: 90,
     borderRadius: 45,
     justifyContent: 'center',
@@ -277,11 +381,11 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '800',
     color: '#FFFFFF',
-    includeFontPadding: false, // Centers text better vertically
+    includeFontPadding: false,
   },
   headerSection: {
     marginBottom: 32,
-    alignItems: 'center', // Centered alignment
+    alignItems: 'center',
   },
   title: {
     fontSize: 28,
@@ -300,7 +404,7 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 64, // Modern taller input
+    height: 64,
     borderRadius: 18,
     paddingHorizontal: 16,
   },
@@ -316,7 +420,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   errorContainer: {
-    height: 24, // Fix height to prevent jumping
+    height: 24,
     justifyContent: 'center',
     marginTop: 8,
     marginBottom: 8,
@@ -333,7 +437,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
-    // Bloom Shadow
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
@@ -344,6 +447,38 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+  },
+  dividerText: {
+    paddingHorizontal: 16,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    height: 60,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    gap: 12,
+  },
+  googleIcon: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#4285F4',
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
   footer: {
     marginTop: 'auto',

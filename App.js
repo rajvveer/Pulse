@@ -4,13 +4,60 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 // ✅ IMPORT initialWindowMetrics
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, Text, ScrollView } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { store } from './src/redux/store';
 import { loginSuccess } from './src/redux/slices/authSlice';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ThemeStatusBar } from './src/components/UI/ThemeStatusBar';
+
+console.log('🚀 [App.js] FILE LOADED');
+
+// 🔴 ERROR BOUNDARY TO CATCH CRASHES
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    console.log('🔴 [ErrorBoundary] getDerivedStateFromError:', error);
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.log('🔴 [ErrorBoundary] componentDidCatch:');
+    console.log('🔴 Error:', error?.message || error);
+    console.log('🔴 Stack:', error?.stack);
+    console.log('🔴 Component Stack:', errorInfo?.componentStack);
+    this.setState({ errorInfo });
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={{ flex: 1, padding: 20, backgroundColor: '#1a1a2e', justifyContent: 'center' }}>
+          <ScrollView>
+            <Text style={{ color: '#ff6b6b', fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>
+              🔴 App Crashed!
+            </Text>
+            <Text style={{ color: '#fff', fontSize: 14, marginBottom: 10 }}>
+              Error: {this.state.error?.message || String(this.state.error)}
+            </Text>
+            <Text style={{ color: '#888', fontSize: 12 }}>
+              {this.state.error?.stack}
+            </Text>
+            <Text style={{ color: '#888', fontSize: 12, marginTop: 10 }}>
+              Component Stack: {this.state.errorInfo?.componentStack}
+            </Text>
+          </ScrollView>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,7 +78,7 @@ const AuthLoader = ({ children }) => {
       try {
         const token = await AsyncStorage.getItem('accessToken');
         const userStr = await AsyncStorage.getItem('user');
-        
+
         if (token && userStr) {
           const user = JSON.parse(userStr);
           dispatch(loginSuccess({ user, token }));
@@ -63,7 +110,7 @@ const AuthLoader = ({ children }) => {
 // Navigation Theme Wrapper Component
 const NavigationTheme = ({ children }) => {
   const { isDark } = useTheme();
-  
+
   const customLightTheme = {
     ...DefaultTheme,
     colors: {
@@ -95,22 +142,27 @@ const NavigationTheme = ({ children }) => {
   );
 };
 
+console.log('🚀 [App.js] Defining App component...');
+
 export default function App() {
+  console.log('🚀 [App.js] App() RENDER');
+
   return (
-    // ✅ PASS initialWindowMetrics HERE
-    <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
-      <Provider store={store}>
-        <ThemeProvider>
-          <QueryClientProvider client={queryClient}>
-            <ThemeStatusBar />
-            <AuthLoader>
-              <NavigationTheme>
-                <RootNavigator />
-              </NavigationTheme>
-            </AuthLoader>
-          </QueryClientProvider>
-        </ThemeProvider>
-      </Provider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
+        <Provider store={store}>
+          <ThemeProvider>
+            <QueryClientProvider client={queryClient}>
+              <ThemeStatusBar />
+              <AuthLoader>
+                <NavigationTheme>
+                  <RootNavigator />
+                </NavigationTheme>
+              </AuthLoader>
+            </QueryClientProvider>
+          </ThemeProvider>
+        </Provider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

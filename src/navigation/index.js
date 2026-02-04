@@ -7,22 +7,26 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Platform, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// ... Your other imports ...
+// Core imports
 import AuthStack from "./AuthStack";
 import { ProfileStack } from "./ProfileStack";
 import FeedScreen from "../screens/FeedScreen";
 import CreatePostScreen from "../screens/CreatePostScreen";
 import NearbyScreen from "../screens/NearbyScreen";
 import PostDetailScreen from "../screens/PostDetailScreen";
-import UserProfileScreen from "../screens/Profile/UserProfileScreen"; 
+import UserProfileScreen from "../screens/Profile/UserProfileScreen";
 import ConnectionsScreen from "../screens/Profile/ConnectionsScreen";
 import EditPostScreen from "../screens/Profile/EditPostScreen";
 import ChatListScreen from "../screens/Chat/ChatListScreen";
 import ChatScreen from "../screens/Chat/ChatScreen";
-
-// ✅ IMPORT NEW SCREENS
 import ReelsScreen from "../screens/ReelsScreen";
 import CreateReelScreen from "../screens/CreateReelScreen";
+
+// NEW FEATURE SCREENS
+import WhisperScreen from "../screens/WhisperScreen";
+import PulseDropsScreen from "../screens/PulseDropsScreen";
+import ChainsScreen from "../screens/ChainsScreen";
+import AlterEgoScreen from "../screens/AlterEgoScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -35,7 +39,7 @@ const MainTabs = () => {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarShowLabel: false, 
+        tabBarShowLabel: false,
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
@@ -43,8 +47,7 @@ const MainTabs = () => {
             iconName = focused ? "home" : "home-outline";
           } else if (route.name === "Nearby") {
             iconName = focused ? "map" : "map-outline";
-          } 
-          // ✅ REELS ICON LOGIC
+          }
           else if (route.name === "Reels") {
             iconName = focused ? "videocam" : "videocam-outline";
           }
@@ -52,7 +55,7 @@ const MainTabs = () => {
             iconName = focused ? "add-circle" : "add-circle-outline";
             return (
               <View style={{
-                top: -10, 
+                top: -10,
                 shadowColor: colors.primary,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
@@ -73,7 +76,7 @@ const MainTabs = () => {
           backgroundColor: colors.card,
           borderTopWidth: 0,
           elevation: 10,
-          height: Platform.OS === "ios" ? 85 : 60 + (insets.bottom > 0 ? insets.bottom : 10), 
+          height: Platform.OS === "ios" ? 85 : 60 + (insets.bottom > 0 ? insets.bottom : 10),
           paddingTop: 8,
           paddingBottom: Platform.OS === "ios" ? 25 : (insets.bottom > 0 ? insets.bottom : 10),
         },
@@ -83,10 +86,7 @@ const MainTabs = () => {
     >
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="Nearby" component={NearbyScreen} />
-      
-      {/* ✅ ADD REELS TAB HERE */}
       <Tab.Screen name="Reels" component={ReelsScreen} />
-
       <Tab.Screen name="Create" component={CreatePostScreen} />
       <Tab.Screen name="Chat" component={ChatListScreen} />
       <Tab.Screen name="Profile" component={ProfileStack} listeners={({ navigation }) => ({ tabPress: (e) => { navigation.navigate("Profile", { screen: "ProfileMain" }); }, })} />
@@ -103,18 +103,25 @@ export const RootNavigator = () => {
         <>
           <Stack.Screen name="Main" component={MainTabs} />
 
-          {/* ✅ REGISTER CREATE REEL SCREEN */}
-          <Stack.Screen 
-            name="CreateReel" 
-            component={CreateReelScreen} 
-            options={{ presentation: 'modal' }} 
+          {/* REGISTER CREATE REEL SCREEN */}
+          <Stack.Screen
+            name="CreateReel"
+            component={CreateReelScreen}
+            options={{ presentation: 'modal' }}
           />
 
+          {/* CORE SCREENS */}
           <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ presentation: "card" }} />
           <Stack.Screen name="UserProfile" component={UserProfileScreen} options={{ presentation: "card" }} />
           <Stack.Screen name="Connections" component={ConnectionsScreen} />
           <Stack.Screen name="EditPost" component={EditPostScreen} options={{ presentation: 'modal' }} />
           <Stack.Screen name="ChatScreen" component={ChatScreen} options={{ presentation: 'card' }} />
+
+          {/* NEW FEATURE SCREENS */}
+          <Stack.Screen name="Whisper" component={WhisperScreen} options={{ presentation: 'card' }} />
+          <Stack.Screen name="PulseDrops" component={PulseDropsScreen} options={{ presentation: 'card' }} />
+          <Stack.Screen name="Chains" component={ChainsScreen} options={{ presentation: 'card' }} />
+          <Stack.Screen name="AlterEgo" component={AlterEgoScreen} options={{ presentation: 'card' }} />
         </>
       ) : (
         <Stack.Screen name="Auth" component={AuthStack} />

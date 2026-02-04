@@ -24,7 +24,7 @@ import { useIsFocused } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
 import api from "../services/api";
 import GifPickerModal from "../components/GifPickerModal";
-import { getTimeAgo } from "../utils/timeAgo"; 
+import { getTimeAgo } from "../utils/timeAgo";
 
 
 const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
@@ -48,7 +48,7 @@ const ReelItem = React.memo(
     item,
     isActive,
     shouldPlay,
-    viewHeight, 
+    viewHeight,
     onLike,
     onComment,
     onShare,
@@ -318,7 +318,7 @@ const ReelItem = React.memo(
       prev.shouldPlay === next.shouldPlay &&
       prev.item._id === next.item._id &&
       prev.item.commentsCount === next.item.commentsCount &&
-      prev.viewHeight === next.viewHeight 
+      prev.viewHeight === next.viewHeight
     );
   },
 );
@@ -327,8 +327,19 @@ const ReelItem = React.memo(
 // --- MAIN SCREEN ---
 
 const ReelsScreen = ({ navigation }) => {
+  console.log('🎬 [ReelsScreen] Component mounting...');
+
   const insets = useSafeAreaInsets();
-  const bottomTabHeight = useBottomTabBarHeight(); 
+
+  // ⚠️ Safe wrapper - useBottomTabBarHeight crashes if not in tab navigator
+  let bottomTabHeight = 0;
+  try {
+    bottomTabHeight = useBottomTabBarHeight();
+  } catch (e) {
+    console.warn('⚠️ [ReelsScreen] useBottomTabBarHeight failed:', e.message);
+    bottomTabHeight = 60; // fallback
+  }
+
   const isFocused = useIsFocused();
 
   // State
@@ -350,12 +361,31 @@ const ReelsScreen = ({ navigation }) => {
 
   // API
   const fetchReels = async () => {
+    console.log('🎬 [ReelsScreen] Starting fetchReels...');
     try {
       const res = await api.get("/reels/feed");
+      console.log('🎬 [ReelsScreen] API Response:', {
+        status: res.status,
+        hasData: !!res.data,
+        dataType: typeof res.data,
+        isArray: Array.isArray(res.data),
+        dataLength: res.data?.data?.length || res.data?.length || 0,
+        rawResponse: JSON.stringify(res.data).slice(0, 500)
+      });
       const data = res.data?.data || (Array.isArray(res.data) ? res.data : []);
+      console.log('🎬 [ReelsScreen] Processed reels count:', data.length);
+      if (data.length > 0) {
+        console.log('🎬 [ReelsScreen] First reel:', {
+          id: data[0]._id,
+          hasVideoUrl: !!data[0].videoUrl,
+          videoUrl: data[0].videoUrl?.slice(0, 100),
+          hasUser: !!data[0].user
+        });
+      }
       setReels(data);
     } catch (e) {
-      console.error("Error fetching reels:", e);
+      console.error("❌ [ReelsScreen] Error fetching reels:", e.message);
+      console.error("❌ [ReelsScreen] Full error:", e.response?.data || e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -468,7 +498,7 @@ const ReelsScreen = ({ navigation }) => {
         item={item}
         isActive={index === activeIndex}
         shouldPlay={isFocused}
-        viewHeight={containerHeight} 
+        viewHeight={containerHeight}
         onLike={handleLike}
         onComment={openComments}
         onShare={handleShare}
@@ -557,7 +587,7 @@ const ReelsScreen = ({ navigation }) => {
             offset: containerHeight * index,
             index,
           })}
-          snapToInterval={containerHeight} 
+          snapToInterval={containerHeight}
           snapToAlignment="start"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
