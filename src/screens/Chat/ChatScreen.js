@@ -51,6 +51,29 @@ const ChatScreen = ({ route, navigation }) => {
   const [replyTo, setReplyTo] = useState(null);
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [showActions, setShowActions] = useState(false);
+  const [peerOnline, setPeerOnline] = useState(targetUser?.isOnline || false);
+  const [peerLastSeen, setPeerLastSeen] = useState(targetUser?.lastActive || null);
+
+  // Animated typing dots
+  const dot1 = useRef(new Animated.Value(0)).current;
+  const dot2 = useRef(new Animated.Value(0)).current;
+  const dot3 = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isTyping) return;
+    const anim = (dot, delay) => Animated.loop(
+      Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ])
+    );
+    const a1 = anim(dot1, 0);
+    const a2 = anim(dot2, 150);
+    const a3 = anim(dot3, 300);
+    a1.start(); a2.start(); a3.start();
+    return () => { a1.stop(); a2.stop(); a3.stop(); dot1.setValue(0); dot2.setValue(0); dot3.setValue(0); };
+  }, [isTyping]);
 
   const flatListRef = useRef();
   const typingTimeoutRef = useRef(null);
@@ -98,11 +121,26 @@ const ChatScreen = ({ route, navigation }) => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       socketService.leaveConversation(conversationId);
       cleanupSocketListeners();
+      if (socketService.socket) {
+        socketService.socket.off('user-status');
+      }
     };
   }, [conversationId, token]);
 
   const setupSocketListeners = () => {
     if (!socketService.socket) return;
+
+    // Online/offline status tracking
+    socketService.socket.off('user-status');
+    socketService.socket.on('user-status', ({ userId, status }) => {
+      const peerId = getUserId(targetUser);
+      if (String(userId) === String(peerId)) {
+        setPeerOnline(status === 'online');
+        if (status !== 'online') {
+          setPeerLastSeen(new Date().toISOString());
+        }
+      }
+    });
 
     socketService.socket.off('new_message');
     socketService.socket.off('messages_seen');
@@ -124,8 +162,8 @@ const ChatScreen = ({ route, navigation }) => {
 
         setMessages(prev => {
           if (isFromMe) {
-            const tempIndex = prev.findIndex(m => 
-              m.tempId && 
+            const tempIndex = prev.findIndex(m =>
+              m.tempId &&
               m.content === newMessage.content &&
               Math.abs(new Date(m.createdAt) - new Date(newMessage.createdAt)) < 5000
             );
@@ -136,7 +174,7 @@ const ChatScreen = ({ route, navigation }) => {
               updated[tempIndex] = { ...newMessage, status: 'sent' };
               return updated;
             }
-            
+
             console.log("⚠️ No temp message found, skipping");
             return prev;
           }
@@ -266,12 +304,26 @@ const ChatScreen = ({ route, navigation }) => {
     }
 
     socketService.sendMessage(payload, (response) => {
-      console.log("📬 Server response:", response);
-      
-      if (response && response.status === 'ok') {
+      console.log("📬 Server response:", JSON.stringify(response));
+
+      // Handle multiple response shapes: {status:'ok'}, {success:true}, or truthy response
+      const isSuccess = response && (
+        response.status === 'ok' || 
+        response.success === true || 
+        response._id ||  // Server returned the saved message
+        response.message  // Server returned the message object
+      );
+
+      if (isSuccess) {
         console.log("✅ Message acknowledged by server");
+        // Update temp message to 'sent' status
+        setMessages(prev => prev.map(msg =>
+          msg.tempId === tempId
+            ? { ...msg, status: 'sent' }
+            : msg
+        ));
       } else {
-        console.error("❌ Send failed");
+        console.error("❌ Send failed, response:", response);
         setMessages(prev => prev.map(msg =>
           msg.tempId === tempId
             ? { ...msg, status: 'failed' }
@@ -369,8 +421,21 @@ const ChatScreen = ({ route, navigation }) => {
   };
 
   // ✅ Updated Header for Group Support
+  const formatLastSeen = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now - d;
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1) return 'last seen just now';
+    if (diffMin < 60) return `last seen ${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `last seen ${diffH}h ago`;
+    return `last seen ${d.toLocaleDateString()}`;
+  };
+
   const renderHeader = () => {
-    let displayName, avatarUri, subtitle = '';
+    let displayName, avatarUri, subtitle = '', subtitleColor = theme.colors.textSecondary;
 
     if (isGroup) {
       displayName = conversation?.groupName || "Group Chat";
@@ -380,9 +445,13 @@ const ChatScreen = ({ route, navigation }) => {
       displayName = targetUser?.username || targetUser?.name || "User";
       avatarUri = targetUser?.profile?.avatar || targetUser?.avatar || "https://via.placeholder.com/40";
       if (isTyping) {
-        subtitle = "typing...";
-      } else if (targetUser?.isOnline) {
-        subtitle = "Active now";
+        subtitle = 'typing...';
+        subtitleColor = '#22C55E';
+      } else if (peerOnline) {
+        subtitle = 'Online';
+        subtitleColor = '#22C55E';
+      } else {
+        subtitle = formatLastSeen(peerLastSeen || targetUser?.lastActive);
       }
     }
 
@@ -395,8 +464,8 @@ const ChatScreen = ({ route, navigation }) => {
           <Ionicons name="chevron-back" size={30} color={theme.colors.text} />
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.headerCenter} 
+        <TouchableOpacity
+          style={styles.headerCenter}
           activeOpacity={0.7}
           onPress={() => {
             if (isGroup) {
@@ -409,24 +478,23 @@ const ChatScreen = ({ route, navigation }) => {
               source={{ uri: avatarUri }}
               style={styles.headerAvatar}
             />
-            {isGroup && (
+            {isGroup ? (
               <View style={styles.groupHeaderBadge}>
                 <Ionicons name="people" size={10} color="#FFF" />
               </View>
-            )}
+            ) : peerOnline ? (
+              <View style={styles.headerOnlineDot} />
+            ) : null}
           </View>
           <View style={styles.headerInfo}>
             <Text style={[styles.headerName, { color: theme.colors.text }]}>
               {displayName}
             </Text>
-            {subtitle && (
-              <Text style={[
-                styles.headerSubtitle,
-                { color: isTyping ? '#0095F6' : theme.colors.textSecondary }
-              ]}>
+            {subtitle ? (
+              <Text style={[styles.headerSubtitle, { color: subtitleColor }]}>
                 {subtitle}
               </Text>
-            )}
+            ) : null}
           </View>
         </TouchableOpacity>
 
@@ -437,7 +505,7 @@ const ChatScreen = ({ route, navigation }) => {
           <TouchableOpacity style={styles.headerBtn}>
             <Ionicons name="videocam-outline" size={26} color={theme.colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.headerBtn}
             onPress={() => {
               if (isGroup) {
@@ -479,59 +547,82 @@ const ChatScreen = ({ route, navigation }) => {
     );
   };
 
+  // Typing indicator component
+  const renderTypingIndicator = () => {
+    if (!isTyping) return null;
+    const dotStyle = (anim) => ({
+      width: 8, height: 8, borderRadius: 4,
+      backgroundColor: theme.colors.textSecondary,
+      marginHorizontal: 2,
+      transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.4] }) }],
+      opacity: anim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
+    });
+    return (
+      <View style={[styles.typingContainer, { backgroundColor: isDark ? '#1A1A1A' : '#F0F0F0' }]}>
+        <Animated.View style={dotStyle(dot1)} />
+        <Animated.View style={dotStyle(dot2)} />
+        <Animated.View style={dotStyle(dot3)} />
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#000' : '#FFF' }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {renderHeader()}
 
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        renderItem={renderMessage}
-        keyExtractor={(item, index) => item._id || item.tempId || `msg_${index}`}
-        inverted
-        contentContainerStyle={styles.messagesList}
-        showsVerticalScrollIndicator={false}
-        ListFooterComponent={loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="small" color={theme.colors.primary} />
-          </View>
-        ) : null}
-      />
-
-      {replyTo && (
-        <View style={[styles.replyBar, { 
-          backgroundColor: isDark ? '#1A1A1A' : '#F0F0F0',
-          borderTopColor: isDark ? '#262626' : '#DBDBDB'
-        }]}>
-          <View style={styles.replyContent}>
-            <Ionicons name="return-up-forward" size={16} color={theme.colors.textSecondary} />
-            <View style={styles.replyTextContainer}>
-              <Text style={[styles.replyName, { color: theme.colors.primary }]}>
-                {getUserId(replyTo.sender) === getMyId() 
-                  ? 'You' 
-                  : (replyTo.sender?.username || targetUser?.username || 'User')}
-              </Text>
-              <Text style={[styles.replyText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
-                {replyTo.content || 'Photo'}
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity onPress={() => setReplyTo(null)}>
-            <Ionicons name="close" size={20} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      )}
-
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessage}
+          keyExtractor={(item, index) => item._id || item.tempId || `msg_${index}`}
+          inverted
+          contentContainerStyle={styles.messagesList}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          ListHeaderComponent={renderTypingIndicator}
+          ListFooterComponent={loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={theme.colors.primary} />
+            </View>
+          ) : null}
+        />
+
+        {replyTo && (
+          <View style={[styles.replyBar, {
+            backgroundColor: isDark ? '#1A1A1A' : '#F0F0F0',
+            borderTopColor: isDark ? '#262626' : '#DBDBDB'
+          }]}>
+            <View style={styles.replyContent}>
+              <Ionicons name="return-up-forward" size={16} color={theme.colors.textSecondary} />
+              <View style={styles.replyTextContainer}>
+                <Text style={[styles.replyName, { color: theme.colors.primary }]}>
+                  {getUserId(replyTo.sender) === getMyId()
+                    ? 'You'
+                    : (replyTo.sender?.username || targetUser?.username || 'User')}
+                </Text>
+                <Text style={[styles.replyText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                  {replyTo.content || 'Photo'}
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)}>
+              <Ionicons name="close" size={20} color={theme.colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={[styles.inputContainer, {
           backgroundColor: isDark ? '#000' : '#FFF',
           borderTopColor: isDark ? '#262626' : '#DBDBDB',
-          paddingBottom: insets.bottom || 8
+          paddingBottom: Math.max(insets.bottom, 8)
         }]}>
           <TouchableOpacity style={styles.inputIcon}>
             <Ionicons name="camera-outline" size={26} color={theme.colors.primary} />
@@ -664,19 +755,19 @@ const ChatScreen = ({ route, navigation }) => {
 };
 
 // ✅ Updated Swipeable Message Component with Group Support
-const SwipeableMessage = ({ 
-  message, 
-  isMe, 
-  isLastInGroup, 
-  onSwipe, 
-  onLongPress, 
-  onImagePress, 
-  theme, 
-  isDark, 
-  targetUser, 
+const SwipeableMessage = ({
+  message,
+  isMe,
+  isLastInGroup,
+  onSwipe,
+  onLongPress,
+  onImagePress,
+  theme,
+  isDark,
+  targetUser,
   currentUser,
   isGroup,
-  conversation 
+  conversation
 }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const replyIconOpacity = useRef(new Animated.Value(0)).current;
@@ -741,8 +832,8 @@ const SwipeableMessage = ({
 
   const renderReplyPreview = () => {
     if (!message.replyTo) return null;
-    
-    const replyContent = typeof message.replyTo === 'object' 
+
+    const replyContent = typeof message.replyTo === 'object'
       ? (message.replyTo.content || (message.replyTo.type === 'image' ? '📷 Photo' : 'Message'))
       : 'Message';
 
@@ -792,6 +883,10 @@ const SwipeableMessage = ({
       case 'failed':
         return <Ionicons name="alert-circle" size={14} color="#FF3B30" style={{ marginLeft: 4 }} />;
       default:
+        // Messages loaded from API have no status field but are already delivered
+        if (message._id && !message.tempId) {
+          return <Ionicons name="checkmark-done-circle" size={14} color="rgba(255,255,255,0.7)" style={{ marginLeft: 4 }} />;
+        }
         return null;
     }
   };
@@ -961,6 +1056,17 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
   },
+  headerOnlineDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#22C55E',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
   groupHeaderBadge: {
     position: 'absolute',
     bottom: 0,
@@ -975,6 +1081,16 @@ const styles = StyleSheet.create({
     borderColor: '#FFF',
   },
   headerInfo: { marginLeft: 10 },
+  typingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginLeft: 10,
+    marginBottom: 4,
+  },
   headerName: {
     fontSize: 16,
     fontWeight: '600',

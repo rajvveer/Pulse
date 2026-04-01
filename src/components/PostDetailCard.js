@@ -1,9 +1,9 @@
 // components/PostDetailCard.js
 import React, { useMemo, useState, useRef, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   TouchableOpacity,
   Dimensions,
   Pressable,
@@ -15,6 +15,7 @@ import { useNavigation } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
+import { getValidAvatarUrl, getDisplayName } from '../utils/avatarHelper';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const IMAGE_HEIGHT = 400;
@@ -22,11 +23,11 @@ const IMAGE_HEIGHT = 400;
 // ✅ HELPER: Extract Author Details Robustly
 const getAuthorDetails = (author) => {
   if (!author) return { avatarUrl: null, displayName: 'Unknown', username: 'unknown' };
-  
-  const avatarUrl = author.profile?.avatar || author.avatar;
-  const displayName = author.profile?.displayName || author.name || author.username || 'Unknown';
+
+  const avatarUrl = getValidAvatarUrl(author);
+  const displayName = getDisplayName(author);
   const username = author.username || 'unknown';
-  
+
   return { avatarUrl, displayName, username };
 };
 
@@ -35,7 +36,7 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
-  
+
   // Animation values
   const likeScale = useRef(new Animated.Value(1)).current;
   const bookmarkScale = useRef(new Animated.Value(1)).current;
@@ -62,8 +63,8 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
   const renderImageItem = useCallback(({ item }) => {
     return (
       <View style={{ width: SCREEN_WIDTH, height: IMAGE_HEIGHT }}>
-        <Image 
-          source={{ uri: item.url }} 
+        <Image
+          source={{ uri: item.url }}
           style={{ width: SCREEN_WIDTH, height: IMAGE_HEIGHT, backgroundColor: theme.colors.border }}
           resizeMode="cover"
         />
@@ -99,10 +100,10 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.surface }]}>
-      
+
       {/* HEADER */}
       <View style={styles.header}>
-        <Pressable 
+        <Pressable
           style={styles.userInfo}
           onPress={handleUserPress}
           disabled={post.isAnonymous}
@@ -120,15 +121,15 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
                 {post.isAnonymous ? 'Anonymous' : displayName}
               </Text>
               {post.author?.isVerified && (
-                <Ionicons name="checkmark-circle" size={14} color={theme.colors.primary} style={{ marginLeft: 4 }}/>
+                <Ionicons name="checkmark-circle" size={14} color={theme.colors.primary} style={{ marginLeft: 4 }} />
               )}
             </View>
             <Text style={[styles.timestamp, { color: theme.colors.textSecondary }]}>
-               {timeAgo} • {post.isAnonymous ? 'Anonymous' : `@${username}`}
+              {timeAgo} • {post.isAnonymous ? 'Anonymous' : `@${username}`}
             </Text>
           </View>
         </Pressable>
-        
+
         <TouchableOpacity style={styles.moreButton}>
           <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
@@ -151,7 +152,7 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
             horizontal={true}
             pagingEnabled={true}
             showsHorizontalScrollIndicator={false}
-            nestedScrollEnabled={true} 
+            nestedScrollEnabled={true}
             removeClippedSubviews={false} // Keep false for horizontal sliders inside vertical lists
             onViewableItemsChanged={onViewableItemsChanged}
             viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
@@ -183,10 +184,10 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
         <View style={styles.leftActions}>
           <Animated.View style={{ transform: [{ scale: likeScale }] }}>
             <TouchableOpacity style={styles.actionButton} onPress={handleLike} activeOpacity={0.7}>
-              <Ionicons 
-                name={post.isLiked ? "heart" : "heart-outline"} 
-                size={28} 
-                color={post.isLiked ? '#E91E63' : theme.colors.text} 
+              <Ionicons
+                name={post.isLiked ? "heart" : "heart-outline"}
+                size={28}
+                color={post.isLiked ? '#E91E63' : theme.colors.text}
               />
               {post.stats?.likes > 0 && (
                 <Text style={[styles.actionText, { color: theme.colors.text }]}>
@@ -212,15 +213,15 @@ const PostDetailCard = ({ post, onLike, onShare, onBookmark, isBookmarked }) => 
 
         <Animated.View style={{ transform: [{ scale: bookmarkScale }] }}>
           <TouchableOpacity activeOpacity={0.7} onPress={handleBookmark}>
-            <Ionicons 
-              name={isBookmarked ? "bookmark" : "bookmark-outline"} 
-              size={26} 
-              color={isBookmarked ? theme.colors.primary : theme.colors.text} 
+            <Ionicons
+              name={isBookmarked ? "bookmark" : "bookmark-outline"}
+              size={26}
+              color={isBookmarked ? theme.colors.primary : theme.colors.text}
             />
           </TouchableOpacity>
         </Animated.View>
       </View>
-      
+
       <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
     </View>
   );

@@ -11,6 +11,8 @@ import MyPostsScreen from "../screens/Profile/MyPostsScreen";
 import AboutScreen from "../screens/Profile/AboutScreen";
 import NotificationsScreen from "../screens/Profile/NotificationsScreen";
 import ConnectionsScreen from "../screens/Profile/ConnectionsScreen";
+import SocialDNAScreen from "../screens/Profile/SocialDNAScreen";
+import PulseScoreScreen from "../screens/Profile/PulseScoreScreen";
 
 const Stack = createStackNavigator();
 
@@ -81,6 +83,16 @@ export const ProfileStack = () => {
       <Stack.Screen
         name="Connections"
         component={ConnectionsScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SocialDNA"
+        component={SocialDNAScreen}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="PulseScore"
+        component={PulseScoreScreen}
         options={{ headerShown: false }}
       />
       {/* ❌ REMOVED UserProfileScreen from here */}

@@ -6,11 +6,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
+import { useDispatch } from 'react-redux';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { loginSuccess } from '../../redux/slices/authSlice';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
 import api from '../../services/api';
-import { useGoogleAuth, getGoogleUserInfo, getDeviceId } from '../../services/firebase';
+import { signInWithGoogle, getDeviceId } from '../../services/firebase';
 
 const { width } = Dimensions.get('window');
 
@@ -44,9 +46,44 @@ const getOrCreateDeviceId = async () => {
   }
 };
 
+// ==================== NETWORK DIAGNOSTIC ====================
+const checkNetworkConnectivity = async () => {
+  console.log('🔍 [Network] Starting connectivity diagnostic...');
+
+  // Test 1: Check if general internet works (Google)
+  let internetWorks = false;
+  try {
+    const googleTest = await fetch('https://www.google.com/generate_204', {
+      method: 'HEAD',
+      cache: 'no-cache',
+    });
+    internetWorks = googleTest.ok || googleTest.status === 204;
+    console.log('✅ [Network] Google reachable:', internetWorks);
+  } catch (e) {
+    console.log('❌ [Network] Google NOT reachable:', e.message);
+  }
+
+  // Test 2: Check if Railway backend is reachable
+  let backendWorks = false;
+  try {
+    const backendTest = await fetch('https://pulsebackendd-production-1d87.up.railway.app/api/v1/health', {
+      method: 'GET',
+      cache: 'no-cache',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    backendWorks = backendTest.ok;
+    console.log('✅ [Network] Backend reachable:', backendWorks);
+  } catch (e) {
+    console.log('❌ [Network] Backend NOT reachable:', e.message);
+  }
+
+  return { internetWorks, backendWorks };
+};
+
 // ==================== MAIN COMPONENT ====================
 const LoginScreen = () => {
   const navigation = useNavigation();
+  const dispatch = useDispatch();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
@@ -56,14 +93,12 @@ const LoginScreen = () => {
   const [error, setError] = useState('');
   const [isFocused, setIsFocused] = useState(false);
 
-  // Google Auth Hook (Expo)
-  const [request, response, promptAsync] = useGoogleAuth();
-
   // Animation values
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
   const slideAnim = React.useRef(new Animated.Value(50)).current;
   const scaleAnim = React.useRef(new Animated.Value(0.3)).current;
 
+  // Run initial animations
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -83,18 +118,6 @@ const LoginScreen = () => {
       }),
     ]).start();
   }, []);
-
-  // Handle Google Auth Response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      handleGoogleAuthSuccess(response.authentication.accessToken);
-    } else if (response?.type === 'error') {
-      setGoogleLoading(false);
-      setError('Google sign in failed');
-    } else if (response?.type === 'dismiss') {
-      setGoogleLoading(false);
-    }
-  }, [response]);
 
   // ==================== FIXED LOGIC ====================
   const method = useMemo(() => {
@@ -144,54 +167,124 @@ const LoginScreen = () => {
       navigation.navigate('VerifyOTP', { identifier: sanitizedIdentifier, method });
 
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Connection failed. Please try again.';
-      setError(errorMessage);
-      Alert.alert('Error', errorMessage);
+      console.log('❌ [Login] Error:', error.message, error.code);
+
+      // Check if this is a network error (no response from server)
+      if (!error.response) {
+        console.log('🔍 [Login] No response - running network diagnostic...');
+
+        // Run diagnostic to determine exact issue
+        const { internetWorks, backendWorks } = await checkNetworkConnectivity();
+
+        if (internetWorks && !backendWorks) {
+          // Internet works but backend doesn't = carrier blocking
+          const carrierError = 'Your mobile network may be blocking our servers. Please try:\n\n' +
+            '1. Switch to WiFi\n' +
+            '2. Try a different mobile network\n' +
+            '3. Use a VPN app';
+          setError('Network blocked by carrier');
+          Alert.alert(
+            '📵 Connection Blocked',
+            carrierError,
+            [{ text: 'OK' }]
+          );
+        } else if (!internetWorks) {
+          // No internet at all
+          setError('No internet connection');
+          Alert.alert('No Connection', 'Please check your internet connection and try again.');
+        } else {
+          // Both work but still failed - temporary issue
+          setError('Connection failed. Please try again.');
+          Alert.alert('Error', 'Connection failed. Please try again in a moment.');
+        }
+      } else {
+        // Server responded with error
+        const errorMessage = error.response?.data?.error || 'Connection failed. Please try again.';
+        setError(errorMessage);
+        Alert.alert('Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   // ==================== GOOGLE SIGN-IN ====================
-  const handleGoogleSignIn = () => {
+  const handleGoogleSignIn = async () => {
     setGoogleLoading(true);
     setError('');
-    promptAsync();
+    
+    try {
+      const result = await signInWithGoogle();
+      await handleGoogleAuthSuccess(result);
+    } catch (error) {
+      setGoogleLoading(false);
+      // We don't need to show an error if they just cancelled the dialog
+      if (error.code !== 'SIGN_IN_CANCELLED') {
+        setError('Google sign in failed');
+      }
+    }
   };
 
-  const handleGoogleAuthSuccess = async (accessToken) => {
+  const handleGoogleAuthSuccess = async (result) => {
     try {
-      // Get user info from Google
-      const userInfo = await getGoogleUserInfo(accessToken);
+      const { userInfo, idToken, accessToken } = result;
 
       // Get device ID
       const deviceId = await getDeviceId();
 
-      // Send to backend - using access token approach
-      const response = await api.post('/auth/firebase-login', {
-        idToken: accessToken, // We send access token, backend should verify with Google
+      // Send to backend - send both tokens, backend will try both verification strategies
+      const authResponse = await api.post('/auth/firebase-login', {
+        idToken: idToken, 
+        accessToken: accessToken,
         email: userInfo.email,
-        name: userInfo.name,
-        picture: userInfo.picture,
+        name: userInfo.name || userInfo.givenName,
+        picture: userInfo.photo,
         googleId: userInfo.id,
         deviceId,
         platform: Platform.OS,
         deviceName: `${userInfo.name || 'User'}'s Device`,
       });
 
-      const { accessToken: appToken, refreshToken, user: userData, requiresUsername } = response.data;
+      const data = authResponse.data;
+      
+      // Handle response - backend may return tokens nested or flat
+      const appToken = data.accessToken || data.tokens?.accessToken;
+      const appRefreshToken = data.refreshToken || data.tokens?.refreshToken;
+      const requiresUsername = data.requiresUsername || data.nextStep === 'create_username';
+      const tempToken = data.tempToken;
+      const user = data.user;
+
+      if (!appToken && !tempToken) {
+        throw new Error('No authentication token received from server');
+      }
 
       // Store tokens
-      await AsyncStorage.setItem('accessToken', appToken);
-      await AsyncStorage.setItem('refreshToken', refreshToken);
+      if (appToken) {
+        await AsyncStorage.setItem('accessToken', appToken);
+      }
+      if (appRefreshToken) {
+        await AsyncStorage.setItem('refreshToken', appRefreshToken);
+      }
+
+      // ✅ FIX: Store user data in AsyncStorage (was missing - caused message sender/receiver swap)
+      if (user) {
+        await AsyncStorage.setItem('user', JSON.stringify(user));
+        console.log('✅ Google auth: user stored in AsyncStorage:', user.id || user._id);
+      }
 
       // Navigate based on whether username is set
       if (requiresUsername) {
         navigation.reset({
           index: 0,
-          routes: [{ name: 'CreateUsername', params: { tempToken: appToken } }],
+          routes: [{ name: 'CreateUsername', params: { tempToken: tempToken || appToken } }],
         });
       } else {
+        // ✅ FIX: Dispatch loginSuccess to Redux (was missing - user object was null in Redux)
+        if (user && appToken) {
+          dispatch(loginSuccess({ user, token: appToken }));
+          console.log('✅ Google auth: Redux state updated with user:', user.id || user._id);
+        }
+
         navigation.reset({
           index: 0,
           routes: [{ name: 'Main' }],
@@ -200,7 +293,7 @@ const LoginScreen = () => {
 
     } catch (error) {
       console.error('Google Auth Error:', error);
-      const errorMessage = error.response?.data?.error || 'Google sign in failed';
+      const errorMessage = error.response?.data?.error || error.message || 'Google sign in failed';
       setError(errorMessage);
       Alert.alert('Sign In Failed', errorMessage);
     } finally {
@@ -320,11 +413,11 @@ const LoginScreen = () => {
               {
                 backgroundColor: isDark ? '#1A1A1A' : '#FFFFFF',
                 borderColor: isDark ? '#333' : '#E0E0E0',
-                opacity: (googleLoading || !request) ? 0.7 : 1,
+                opacity: googleLoading ? 0.7 : 1,
               }
             ]}
             onPress={handleGoogleSignIn}
-            disabled={loading || googleLoading || !request}
+            disabled={loading || googleLoading}
             activeOpacity={0.8}
           >
             {googleLoading ? (

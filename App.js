@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
@@ -11,10 +11,9 @@ import { loginSuccess } from './src/redux/slices/authSlice';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ThemeStatusBar } from './src/components/UI/ThemeStatusBar';
+import pushNotifications from './src/services/pushNotifications';
 
-console.log('🚀 [App.js] FILE LOADED');
-
-// 🔴 ERROR BOUNDARY TO CATCH CRASHES
+// ERROR BOUNDARY TO CATCH CRASHES
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -22,15 +21,10 @@ class ErrorBoundary extends React.Component {
   }
 
   static getDerivedStateFromError(error) {
-    console.log('🔴 [ErrorBoundary] getDerivedStateFromError:', error);
     return { hasError: true, error };
   }
 
   componentDidCatch(error, errorInfo) {
-    console.log('🔴 [ErrorBoundary] componentDidCatch:');
-    console.log('🔴 Error:', error?.message || error);
-    console.log('🔴 Stack:', error?.stack);
-    console.log('🔴 Component Stack:', errorInfo?.componentStack);
     this.setState({ errorInfo });
   }
 
@@ -82,9 +76,10 @@ const AuthLoader = ({ children }) => {
         if (token && userStr) {
           const user = JSON.parse(userStr);
           dispatch(loginSuccess({ user, token }));
-          console.log('✅ User restored from AsyncStorage');
-        } else {
-          console.log('❌ No stored user found');
+
+          // Initialize push notifications after login
+          pushNotifications.initializePushNotifications()
+            .catch(() => { });
         }
       } catch (error) {
         console.error('Error checking login:', error);
@@ -135,17 +130,43 @@ const NavigationTheme = ({ children }) => {
     },
   };
 
+  // Deep linking configuration
+  const linking = {
+    prefixes: ['pulse://', 'https://getpulse.app'],
+    config: {
+      screens: {
+        Main: {
+          screens: {
+            Feed: 'feed',
+            Nearby: 'nearby',
+            Reels: 'reels',
+            Whisper: 'whisper',
+            Chat: 'chat',
+          },
+        },
+        PostDetail: 'post/:postId',
+        UserProfile: 'profile/:username',
+        Roulette: 'roulette',
+        Bookmarks: 'bookmarks',
+        AlterEgo: 'alter-ego',
+        PulseDrops: 'drops',
+        Chains: 'chains',
+        Search: 'search',
+        Auth: 'auth',
+      },
+    },
+  };
+
   return (
-    <NavigationContainer theme={isDark ? customDarkTheme : customLightTheme}>
+    <NavigationContainer theme={isDark ? customDarkTheme : customLightTheme} linking={linking}>
       {children}
     </NavigationContainer>
   );
 };
 
-console.log('🚀 [App.js] Defining App component...');
+// Main App Component
 
 export default function App() {
-  console.log('🚀 [App.js] App() RENDER');
 
   return (
     <ErrorBoundary>

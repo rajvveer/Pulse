@@ -1,9 +1,15 @@
 import { io } from 'socket.io-client';
-import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'https://pulse-backend-262s.onrender.com'; 
+// ============================================================
+// SOCKET CONFIGURATION - Production Ready
+// ============================================================
+// Use the same Railway backend URL as api.js
+const SOCKET_URL = 'https://pulsebackendd-production-1d87.up.railway.app';
 
 let socket = null;
+let pendingEmits = []; // Queue for messages sent while disconnected
+let connectionAttempts = 0;
 
 class SocketService {
   connect(token) {
@@ -12,19 +18,115 @@ class SocketService {
       return;
     }
 
-    console.log('🔌 Connecting to socket...');
+    // Don't create duplicate connections
+    if (socket?.connecting) {
+      console.log('⏳ Socket connection already in progress...');
+      return;
+    }
 
-    socket = io(API_URL, {
+    console.log('🔌 Connecting to socket:', SOCKET_URL);
+    connectionAttempts = 0;
+
+    socket = io(SOCKET_URL, {
       auth: { token },
-      transports: ['websocket'],
+      // ✅ CRITICAL: Use polling first, then upgrade to websocket
+      // Mobile networks often block direct WebSocket connections
+      transports: ['polling', 'websocket'],
+      upgrade: true, // Allow upgrade from polling to websocket
+
+      // ✅ AGGRESSIVE RECONNECTION for mobile data reliability
       reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: Infinity, // Never stop trying
+      reconnectionDelay: 1000,        // Start with 1 second
+      reconnectionDelayMax: 10000,    // Max 10 seconds between retries
+      randomizationFactor: 0.5,       // Add jitter to prevent thundering herd
+
+      // ✅ LONGER TIMEOUTS for slow mobile networks
+      timeout: 60000,                 // 60 second connection timeout
+      pingTimeout: 30000,             // 30 second ping timeout
+      pingInterval: 25000,            // Ping every 25 seconds
+
+      // ✅ FORCE NEW CONNECTION to avoid stale socket issues
+      forceNew: true,
+
+      // ✅ BUFFER MANAGEMENT
+      rememberUpgrade: true,          // Remember if upgrade was successful
     });
 
-    socket.on('connect', () => console.log('✅ Connected to Socket.io:', socket.id));
-    socket.on('disconnect', (reason) => console.log('⚠️ Socket disconnected:', reason));
-    socket.on('connect_error', (error) => console.error('❌ Connection error:', error.message));
+    // Connection successful
+    socket.on('connect', () => {
+      connectionAttempts = 0;
+      console.log('✅ Connected to Socket.io:', socket.id);
+      console.log('📡 Transport:', socket.io.engine.transport.name);
+
+      // Process any queued messages
+      this._processPendingEmits();
+    });
+
+    // Track transport upgrade
+    socket.io.engine.on('upgrade', () => {
+      console.log('🚀 Socket upgraded to:', socket.io.engine.transport.name);
+    });
+
+    // Disconnection handler
+    socket.on('disconnect', (reason) => {
+      console.log('⚠️ Socket disconnected:', reason);
+
+      // If server disconnected us, we need to manually reconnect
+      if (reason === 'io server disconnect') {
+        console.log('🔄 Server disconnected us, reconnecting...');
+        socket.connect();
+      }
+    });
+
+    // Connection error handler with detailed logging
+    socket.on('connect_error', async (error) => {
+      connectionAttempts++;
+      console.error(`❌ Connection error (attempt ${connectionAttempts}):`, error.message);
+
+      // ✅ FIX: If auth error (expired token), refresh the token before reconnecting
+      if (error.message === 'Authentication error' || error.message?.includes('expired')) {
+        console.log('🔑 Socket auth failed — refreshing token for next reconnect...');
+        try {
+          const freshToken = await AsyncStorage.getItem('accessToken');
+          if (freshToken && socket) {
+            socket.auth.token = freshToken;
+            console.log('✅ Socket auth token updated from storage');
+          }
+        } catch (e) {
+          console.error('❌ Failed to refresh socket token:', e.message);
+        }
+      }
+
+      // After 3 failed websocket attempts, force polling
+      if (connectionAttempts === 3 && socket.io.opts.transports.includes('websocket')) {
+        console.log('🔄 Forcing polling-only mode after websocket failures...');
+        socket.io.opts.transports = ['polling'];
+      }
+    });
+
+    // Reconnection events
+    socket.on('reconnect', (attemptNumber) => {
+      console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
+      this._processPendingEmits();
+    });
+
+    socket.on('reconnect_attempt', (attemptNumber) => {
+      console.log(`🔄 Reconnection attempt ${attemptNumber}...`);
+    });
+
+    socket.on('reconnect_error', (error) => {
+      console.error('❌ Reconnection error:', error.message);
+    });
+
+    socket.on('reconnect_failed', () => {
+      console.error('💀 All reconnection attempts failed');
+    });
+
+    // Generic error handler
+    socket.on('error', (error) => {
+      console.error('❌ Socket error:', error);
+    });
   }
 
   disconnect() {
@@ -32,23 +134,51 @@ class SocketService {
       console.log('👋 Disconnecting socket');
       socket.disconnect();
       socket = null;
+      pendingEmits = [];
+      connectionAttempts = 0;
     }
   }
 
-  // ✅ GENERAL EMIT METHOD
+  // ✅ Process queued messages after reconnection
+  _processPendingEmits() {
+    if (pendingEmits.length > 0) {
+      console.log(`📤 Processing ${pendingEmits.length} queued messages...`);
+      const toProcess = [...pendingEmits];
+      pendingEmits = [];
+
+      toProcess.forEach(({ event, data, callback }) => {
+        this.emit(event, data, callback);
+      });
+    }
+  }
+
+  // ✅ IMPROVED EMIT METHOD with queuing
   emit(event, data, callback) {
     if (!socket) {
       console.error('❌ Socket not initialized');
-      return;
-    }
-    
-    if (!socket.connected) {
-      console.error('❌ Socket not connected');
+      if (callback) callback({ status: 'error', message: 'Socket not initialized' });
       return;
     }
 
+    // If not connected, queue the message (except for certain events)
+    if (!socket.connected) {
+      const noQueueEvents = ['typing_start', 'typing_stop'];
+
+      if (!noQueueEvents.includes(event)) {
+        // Only log non-typing queued events to avoid spam
+        if (pendingEmits.length < 3) {
+          console.log(`⏳ Socket not connected, queuing: ${event}`);
+        }
+        pendingEmits.push({ event, data, callback });
+        return;
+      } else {
+        // Silently skip typing events when disconnected
+        return;
+      }
+    }
+
     console.log(`📤 Emitting: ${event}`, data);
-    
+
     if (callback) {
       socket.emit(event, data, callback);
     } else {
@@ -106,7 +236,37 @@ class SocketService {
   removeListener(eventName, callback) {
     this.off(eventName, callback);
   }
-  
+
+  // ✅ CONNECTION STATE HELPERS
+  get isConnected() {
+    return socket?.connected || false;
+  }
+
+  // ✅ Update token (call this after HTTP token refresh)
+  updateToken(newToken) {
+    if (socket) {
+      socket.auth.token = newToken;
+      console.log('🔑 Socket auth token updated');
+
+      // If disconnected due to auth, reconnect with new token
+      if (!socket.connected) {
+        console.log('🔄 Reconnecting socket with fresh token...');
+        socket.connect();
+      }
+    }
+  }
+
+  get isConnecting() {
+    return socket?.connecting || false;
+  }
+
+  get connectionState() {
+    if (!socket) return 'disconnected';
+    if (socket.connected) return 'connected';
+    if (socket.connecting) return 'connecting';
+    return 'disconnected';
+  }
+
   // Expose the socket instance getter
   get socket() {
     return socket;

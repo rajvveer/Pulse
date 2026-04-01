@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
-  Alert, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
   Image,
   Dimensions,
   FlatList,
@@ -14,36 +14,35 @@ import {
   StatusBar,
   RefreshControl
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSelector } from 'react-redux';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
+import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import api from '../../services/api';
 
 const { width } = Dimensions.get('window');
-const COVER_HEIGHT = 200;
-const COLUMN_SIZE = (width - 32) / 2;
+const HEADER_HEIGHT = 260;
+const AVATAR_SIZE = 100;
+const GRID_GAP = 2;
+const NUM_COLUMNS = 3;
+const ITEM_SIZE = (width - (GRID_GAP * (NUM_COLUMNS + 1))) / NUM_COLUMNS;
 
 const UserProfileScreen = ({ route, navigation }) => {
-  const { username, userId } = route.params; 
+  const { username, userId } = route.params;
   const { user: currentUser } = useSelector(state => state.auth);
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
   const [userData, setUserData] = useState(null);
-  const [userPosts, setUserPosts] = useState([]); 
+  const [userPosts, setUserPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Follow State
+
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
-  
-  // ✅ NEW: Message State
   const [messageLoading, setMessageLoading] = useState(false);
-  
-  // Animation Value
+
   const scrollY = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -53,12 +52,12 @@ const UserProfileScreen = ({ route, navigation }) => {
   const fetchProfileData = async () => {
     try {
       setLoading(true);
-      
-      const endpoint = username ? `/users/${username}` : `/users/${userId}`; 
-      
+
+      const endpoint = username ? `/users/${username}` : `/users/${userId}`;
+
       const userResponse = await api.get(endpoint);
       const fetchedUser = userResponse.data.data;
-      
+
       setUserData(fetchedUser);
       setIsFollowing(fetchedUser.isFollowing || false);
 
@@ -78,58 +77,51 @@ const UserProfileScreen = ({ route, navigation }) => {
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchProfileData();
-    setRefreshing(false);
   };
-
-  // --- ACTIONS ---
 
   const handleFollowToggle = async () => {
     if (followLoading) return;
     try {
       setFollowLoading(true);
-      
-      // Optimistic Update
+
       const willFollow = !isFollowing;
       setIsFollowing(willFollow);
-      
+
       setUserData(prev => ({
         ...prev,
         stats: {
           ...prev.stats,
-          followers: willFollow 
-            ? (prev.stats.followers || 0) + 1 
+          followers: willFollow
+            ? (prev.stats.followers || 0) + 1
             : (prev.stats.followers || 0) - 1
         }
       }));
 
       await api.post(`/users/${userData.username}/follow`);
-      
+
     } catch (error) {
       console.error('Follow error:', error);
-      setIsFollowing(prev => !prev); // Revert
+      setIsFollowing(prev => !prev);
       Alert.alert('Error', 'Failed to update follow status');
     } finally {
       setFollowLoading(false);
     }
   };
 
-  // ✅ NEW: Handle Message Button Click
   const handleMessage = async () => {
     if (messageLoading) return;
 
     try {
       setMessageLoading(true);
 
-      // 1. Call API to get or create conversation ID
-      const res = await api.post('/chat/conversation', { 
-        targetUserId: userData._id 
+      const res = await api.post('/chat/conversation', {
+        targetUserId: userData._id
       });
 
       if (res.data.success) {
-        // 2. Navigate to Chat Screen with required params
-        navigation.navigate('ChatScreen', { 
-          conversationId: res.data.data._id, 
-          targetUser: userData // Pass full user object for header
+        navigation.navigate('ChatScreen', {
+          conversationId: res.data.data._id,
+          targetUser: userData
         });
       }
     } catch (error) {
@@ -140,7 +132,11 @@ const UserProfileScreen = ({ route, navigation }) => {
     }
   };
 
-  // --- RENDERING ---
+  const formatNumber = (num) => {
+    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+    return num?.toString() || '0';
+  };
 
   if (loading && !refreshing) {
     return (
@@ -155,453 +151,455 @@ const UserProfileScreen = ({ route, navigation }) => {
   const isOwnProfile = userData._id === currentUser?._id;
   const avatarInitial = (userData.username || '?').charAt(0).toUpperCase();
 
-  const renderPostItem = ({ item }) => {
+  const renderGridItem = ({ item }) => {
     const imageUrl = item.content?.media?.[0]?.url;
+    const isVideo = item.content?.media?.[0]?.type === 'video';
+
     return (
-      <TouchableOpacity 
-        style={[styles.galleryItem, { backgroundColor: theme.colors.surface }]}
+      <TouchableOpacity
+        style={styles.gridItem}
         onPress={() => navigation.navigate('PostDetail', { postId: item._id })}
         activeOpacity={0.9}
       >
         {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.galleryImage} resizeMode="cover" />
+          <Image source={{ uri: imageUrl }} style={styles.gridImage} resizeMode="cover" />
         ) : (
-          <View style={styles.textPost}>
-             <Text numberOfLines={4} style={[styles.postTextContent, { color: theme.colors.text }]}>
-               "{item.content?.text}"
-             </Text>
-             <Ionicons name="text" size={20} color={theme.colors.textSecondary} style={{marginTop: 10}}/>
+          <View style={[styles.textPostGrid, { backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7' }]}>
+            <Text numberOfLines={3} style={[styles.gridText, { color: theme.colors.text }]}>
+              {item.content?.text}
+            </Text>
           </View>
         )}
-        <View style={styles.likeBadge}>
-           <Ionicons name="heart" size={12} color="#FFF" />
-           <Text style={styles.likeCount}>{item.stats?.likes || 0}</Text>
-        </View>
+
+        {isVideo && (
+          <View style={styles.videoIndicator}>
+            <Ionicons name="play" size={16} color="#FFF" />
+          </View>
+        )}
+
+        {item.content?.media?.length > 1 && (
+          <View style={styles.multiIndicator}>
+            <Ionicons name="copy" size={14} color="#FFF" />
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* 1. Custom Nav Bar */}
-      <View style={styles.navBar}>
-        <TouchableOpacity style={styles.iconBtnGlass} onPress={() => navigation.goBack()}>
-           <Ionicons name="arrow-back" size={24} color="#FFF" />
-        </TouchableOpacity>
-        
-        <View style={styles.navBadge}>
-           <Text style={styles.navUsername}>@{userData.username}</Text>
-        </View>
+      {/* Floating Back Button */}
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.goBack()}
+      >
+        <Ionicons name="arrow-back" size={24} color="#FFF" />
+      </TouchableOpacity>
 
-        <TouchableOpacity style={styles.iconBtnGlass}>
-           <Ionicons name="ellipsis-horizontal" size={24} color="#FFF" />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
+            progressViewOffset={HEADER_HEIGHT / 2}
+          />
+        }
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
         scrollEventThrottle={16}
       >
-        
-        {/* 2. Cover Photo */}
-        <View style={styles.coverContainer}>
-           <Image 
-             source={{ uri: userData.profile?.coverPhoto || 'https://images.unsplash.com/photo-1579546929518-9e396f3cc809?w=800&q=80' }} 
-             style={styles.coverPhoto} 
-           />
-           <View style={styles.coverOverlay} />
-        </View>
+        {/* Hero Header */}
+        <View style={styles.headerContainer}>
+          <Image
+            source={{ uri: userData.profile?.coverPhoto || 'https://images.unsplash.com/photo-1557683316-973673baf926?w=800&q=80' }}
+            style={styles.coverImage}
+            blurRadius={1}
+          />
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.9)']}
+            style={styles.headerGradient}
+          />
 
-        {/* 3. Profile Body */}
-        <View style={styles.profileBody}>
-           
-           {/* Avatar */}
-           <View style={[styles.avatarContainer, { borderColor: theme.colors.background }]}>
+          {/* Profile Info on Header */}
+          <View style={styles.profileInfo}>
+            <View style={styles.avatarWrapper}>
               {userData.profile?.avatar ? (
                 <Image source={{ uri: userData.profile.avatar }} style={styles.avatar} />
               ) : (
                 <View style={[styles.avatarPlaceholder, { backgroundColor: theme.colors.primary }]}>
-                   <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+                  <Text style={styles.avatarInitial}>{avatarInitial}</Text>
                 </View>
               )}
               {userData.isVerified && (
-                 <View style={styles.verifiedBadge}>
-                    <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-                 </View>
-              )}
-           </View>
-
-           {/* Info */}
-           <View style={styles.infoSection}>
-              <Text style={[styles.displayName, { color: theme.colors.text }]}>
-                {userData.profile?.displayName || userData.username}
-              </Text>
-              
-              {userData.profile?.bio ? (
-                <Text style={[styles.bio, { color: theme.colors.textSecondary }]}>{userData.profile.bio}</Text>
-              ) : null}
-
-              {userData.profile?.location ? (
-                <View style={styles.locationChip}>
-                   <Ionicons name="location-sharp" size={12} color={theme.colors.textSecondary} />
-                   <Text style={[styles.locationText, { color: theme.colors.textSecondary }]}>
-                      {userData.profile.location}
-                   </Text>
+                <View style={styles.verifiedBadge}>
+                  <Ionicons name="checkmark" size={12} color="#FFF" />
                 </View>
-              ) : null}
-           </View>
-
-           {/* 4. Stats Card */}
-           <View style={[styles.statsCard, { backgroundColor: isDark ? '#1A1A1A' : '#F5F5F5' }]}>
-              <View style={styles.statItem}>
-                 <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                    {userPosts.length || userData.stats?.posts || 0}
-                 </Text>
-                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Posts</Text>
-              </View>
-              <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
-              
-              <TouchableOpacity 
-                 style={styles.statItem}
-                 onPress={() => navigation.push('Connections', { username: userData.username, type: 'followers' })}
-              >
-                 <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                    {userData.stats?.followers || 0}
-                 </Text>
-                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Followers</Text>
-              </TouchableOpacity>
-              
-              <View style={[styles.divider, { backgroundColor: theme.colors.border }]} />
-              
-              <TouchableOpacity 
-                 style={styles.statItem}
-                 onPress={() => navigation.push('Connections', { username: userData.username, type: 'following' })}
-              >
-                 <Text style={[styles.statValue, { color: theme.colors.text }]}>
-                    {userData.stats?.following || 0}
-                 </Text>
-                 <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>Following</Text>
-              </TouchableOpacity>
-           </View>
-
-           {/* 5. Action Buttons (Follow / Message) */}
-           {!isOwnProfile && (
-             <View style={styles.actionRow}>
-                {/* Follow Button */}
-                <TouchableOpacity 
-                   style={[styles.primaryBtn, { 
-                     backgroundColor: isFollowing ? theme.colors.surface : theme.colors.text,
-                     borderWidth: isFollowing ? 1 : 0,
-                     borderColor: theme.colors.border,
-                     flex: 3 // Take more width
-                   }]}
-                   onPress={handleFollowToggle}
-                   disabled={followLoading}
-                >
-                   {followLoading ? (
-                      <ActivityIndicator size="small" color={isFollowing ? theme.colors.text : theme.colors.background} />
-                   ) : (
-                      <Text style={[styles.primaryBtnText, { 
-                        color: isFollowing ? theme.colors.text : theme.colors.background 
-                      }]}>
-                        {isFollowing ? 'Following' : 'Follow'}
-                      </Text>
-                   )}
-                </TouchableOpacity>
-                
-                {/* ✅ MESSAGE BUTTON */}
-                <TouchableOpacity 
-                   style={[styles.iconBtn, { borderColor: theme.colors.border, flex: 1 }]}
-                   onPress={handleMessage}
-                   disabled={messageLoading}
-                >
-                   {messageLoading ? (
-                     <ActivityIndicator size="small" color={theme.colors.text} />
-                   ) : (
-                     <Ionicons name="chatbubble-ellipses-outline" size={24} color={theme.colors.text} />
-                   )}
-                </TouchableOpacity>
-             </View>
-           )}
-
-           {/* 6. Gallery Header */}
-           <View style={styles.galleryHeader}>
-              <Text style={[styles.galleryTitle, { color: theme.colors.text }]}>Gallery</Text>
-              <View style={{height: 1, flex: 1, backgroundColor: theme.colors.border, marginLeft: 16}} />
-           </View>
-
-           {/* 7. Gallery Grid */}
-           <View style={styles.galleryContainer}>
-              {userPosts.length > 0 ? (
-                 <FlatList
-                   data={userPosts}
-                   keyExtractor={item => item._id}
-                   renderItem={renderPostItem}
-                   numColumns={2}
-                   scrollEnabled={false}
-                   columnWrapperStyle={{ justifyContent: 'space-between', marginBottom: 16 }}
-                 />
-              ) : (
-                 <View style={styles.emptyContainer}>
-                    <Ionicons name="images-outline" size={48} color={theme.colors.textSecondary} opacity={0.5} />
-                    <Text style={{ color: theme.colors.textSecondary, marginTop: 10 }}>No posts yet.</Text>
-                 </View>
               )}
-           </View>
+            </View>
 
+            <Text style={styles.displayName}>
+              {userData.profile?.displayName || userData.username}
+            </Text>
+
+            <Text style={styles.usernameText}>@{userData.username}</Text>
+
+            {userData.profile?.bio && (
+              <Text style={styles.bio}>{userData.profile.bio}</Text>
+            )}
+          </View>
         </View>
+
+        {/* Stats Bar */}
+        <View style={[styles.statsBar, { backgroundColor: theme.colors.background }]}>
+          <View style={styles.statItem}>
+            <Text style={[styles.statNumber, { color: theme.colors.text }]}>
+              {formatNumber(userPosts.length || userData.stats?.posts || 0)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>posts</Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.statItem}
+            onPress={() => navigation.push('Connections', { username: userData.username, type: 'followers' })}
+          >
+            <Text style={[styles.statNumber, { color: theme.colors.text }]}>
+              {formatNumber(userData.stats?.followers || 0)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>followers</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.statItem}
+            onPress={() => navigation.push('Connections', { username: userData.username, type: 'following' })}
+          >
+            <Text style={[styles.statNumber, { color: theme.colors.text }]}>
+              {formatNumber(userData.stats?.following || 0)}
+            </Text>
+            <Text style={[styles.statLabel, { color: theme.colors.textSecondary }]}>following</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Action Buttons */}
+        {!isOwnProfile && (
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[
+                styles.followBtn,
+                {
+                  backgroundColor: isFollowing
+                    ? (isDark ? '#2C2C2E' : '#EBEBF0')
+                    : '#0095F6'
+                }
+              ]}
+              onPress={handleFollowToggle}
+              disabled={followLoading}
+            >
+              {followLoading ? (
+                <ActivityIndicator size="small" color={isFollowing ? theme.colors.text : '#FFF'} />
+              ) : (
+                <Text style={[
+                  styles.followBtnText,
+                  { color: isFollowing ? theme.colors.text : '#FFF' }
+                ]}>
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.messageBtn, { backgroundColor: isDark ? '#2C2C2E' : '#EBEBF0' }]}
+              onPress={handleMessage}
+              disabled={messageLoading}
+            >
+              {messageLoading ? (
+                <ActivityIndicator size="small" color={theme.colors.text} />
+              ) : (
+                <Ionicons name="chatbubble-outline" size={18} color={theme.colors.text} />
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.messageBtn, { backgroundColor: isDark ? '#2C2C2E' : '#EBEBF0' }]}
+            >
+              <Ionicons name="ellipsis-horizontal" size={18} color={theme.colors.text} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Tab Bar */}
+        <View style={[styles.tabBar, { borderBottomColor: isDark ? '#2C2C2E' : '#EBEBF0' }]}>
+          <TouchableOpacity style={styles.tab}>
+            <Ionicons name="grid" size={24} color={theme.colors.text} />
+            <View style={[styles.tabIndicator, { backgroundColor: theme.colors.text }]} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Gallery Grid */}
+        <View style={styles.galleryContainer}>
+          {userPosts.length > 0 ? (
+            <FlatList
+              data={userPosts}
+              keyExtractor={item => item._id}
+              renderItem={renderGridItem}
+              numColumns={NUM_COLUMNS}
+              scrollEnabled={false}
+              contentContainerStyle={styles.gridContent}
+              columnWrapperStyle={styles.gridRow}
+            />
+          ) : (
+            <View style={styles.emptyState}>
+              <View style={[styles.emptyIcon, { backgroundColor: isDark ? '#2C2C2E' : '#F2F2F7' }]}>
+                <Ionicons name="camera-outline" size={48} color={theme.colors.textSecondary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No Posts Yet</Text>
+              <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
+                When {userData.profile?.displayName || userData.username} shares posts, you'll see them here.
+              </Text>
+            </View>
+          )}
+        </View>
+
       </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  // --- Nav ---
-  navBar: {
+  container: {
+    flex: 1
+  },
+
+  // Back Button
+  backButton: {
     position: 'absolute',
     top: 50,
-    left: 0,
-    right: 0,
+    left: 16,
     zIndex: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  iconBtnGlass: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  navBadge: {
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  navUsername: {
-    color: '#FFF',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  
-  // --- Header ---
-  coverContainer: {
-    height: COVER_HEIGHT,
-    width: '100%',
+
+  // Header
+  headerContainer: {
+    height: HEADER_HEIGHT,
     position: 'relative',
   },
-  coverPhoto: {
+  coverImage: {
     width: '100%',
     height: '100%',
+    position: 'absolute',
   },
-  coverOverlay: {
+  headerGradient: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.2)',
   },
-  
-  // --- Body ---
-  profileBody: {
-    marginTop: -40,
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
-    paddingHorizontal: 16,
-    paddingBottom: 40,
+
+  // Profile Info
+  profileInfo: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
   },
-  avatarContainer: {
-    alignSelf: 'center',
-    borderWidth: 4,
-    borderRadius: 60,
+  avatarWrapper: {
     position: 'relative',
-    marginTop: -50,
+    marginBottom: 10,
   },
   avatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    borderWidth: 3,
+    borderColor: '#FFF',
   },
   avatarPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFF',
   },
   avatarInitial: {
     fontSize: 40,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#FFF',
   },
   verifiedBadge: {
     position: 'absolute',
-    bottom: 5,
-    right: 5,
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
+    bottom: 2,
+    right: 2,
     width: 24,
     height: 24,
+    borderRadius: 12,
+    backgroundColor: '#0095F6',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#FFF',
   },
-  
-  // --- Info ---
-  infoSection: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
   displayName: {
-    fontSize: 24,
-    fontWeight: '800',
-    letterSpacing: 0.5,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#FFF',
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  usernameText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 2,
   },
   bio: {
-    fontSize: 14,
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.85)',
     textAlign: 'center',
-    marginTop: 8,
-    maxWidth: '80%',
-    lineHeight: 20,
-  },
-  locationChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    backgroundColor: 'rgba(128,128,128,0.1)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  locationText: {
-    fontSize: 12,
-    marginLeft: 4,
-    fontWeight: '500',
+    marginTop: 6,
+    paddingHorizontal: 40,
+    lineHeight: 18,
   },
 
-  // --- Stats Card ---
-  statsCard: {
+  // Stats
+  statsBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 24,
+    justifyContent: 'space-around',
     paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
   },
   statItem: {
     alignItems: 'center',
-    flex: 1,
+    minWidth: 80,
   },
-  statValue: {
+  statNumber: {
     fontSize: 18,
-    fontWeight: '800',
+    fontWeight: '700',
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 13,
     marginTop: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  divider: {
-    width: 1,
-    height: 24,
   },
 
-  // --- Actions ---
+  // Actions
   actionRow: {
     flexDirection: 'row',
-    marginTop: 24,
-    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 8,
   },
-  primaryBtn: {
-    paddingVertical: 14,
-    borderRadius: 30,
+  followBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  primaryBtnText: {
-    fontWeight: '700',
-    fontSize: 15,
+  followBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
-  iconBtn: {
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
+  messageBtn: {
+    width: 44,
+    height: 36,
+    borderRadius: 8,
     justifyContent: 'center',
     alignItems: 'center',
   },
 
-  // --- Gallery ---
-  galleryHeader: {
+  // Tabs
+  tabBar: {
     flexDirection: 'row',
+    borderBottomWidth: 1,
+  },
+  tab: {
+    flex: 1,
     alignItems: 'center',
-    marginTop: 30,
-    marginBottom: 20,
+    paddingVertical: 12,
+    position: 'relative',
   },
-  galleryTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+  tabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    width: 32,
+    height: 2,
+    borderRadius: 1,
   },
+
+  // Grid
   galleryContainer: {
     flex: 1,
   },
-  galleryItem: {
-    width: COLUMN_SIZE,
-    height: COLUMN_SIZE * 1.3,
-    borderRadius: 16,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: 0,
+  gridContent: {
+    padding: GRID_GAP / 2,
   },
-  galleryImage: {
+  gridRow: {
+    gap: GRID_GAP,
+    marginBottom: GRID_GAP,
+  },
+  gridItem: {
+    width: ITEM_SIZE,
+    height: ITEM_SIZE,
+    position: 'relative',
+  },
+  gridImage: {
     width: '100%',
     height: '100%',
   },
-  textPost: {
-    flex: 1,
+  textPostGrid: {
+    width: '100%',
+    height: '100%',
+    padding: 8,
+    justifyContent: 'center',
+  },
+  gridText: {
+    fontSize: 11,
+    lineHeight: 15,
+    textAlign: 'center',
+  },
+  videoIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+  multiIndicator: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+  },
+
+  // Empty State
+  emptyState: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 12,
+    marginBottom: 16,
   },
-  postTextContent: {
-    fontSize: 12,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  likeBadge: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    gap: 4,
-  },
-  likeCount: {
-    color: '#FFF',
-    fontSize: 10,
+  emptyTitle: {
+    fontSize: 22,
     fontWeight: '700',
+    marginBottom: 8,
   },
-  emptyContainer: {
-    alignItems: 'center',
-    marginTop: 40,
+  emptySubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
 

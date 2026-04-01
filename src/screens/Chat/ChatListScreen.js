@@ -56,7 +56,7 @@ const ChatListScreen = ({ navigation }) => {
         const convos = res.data.data || [];
         setConversations(convos);
         filterConversations(activeTab, convos, searchQuery);
-        
+
         // Extract active users from DMs only
         const active = convos
           .filter(conv => conv.type === 'direct')
@@ -120,7 +120,7 @@ const ChatListScreen = ({ navigation }) => {
 
       const handleLiveMessage = (newMessage) => {
         if (!currentUserId) return;
-        
+
         setConversations((prevConvos) => {
           const exists = prevConvos.find((c) => c._id === newMessage.conversation);
           const senderId = normalizeId(newMessage.sender);
@@ -132,23 +132,23 @@ const ChatListScreen = ({ navigation }) => {
               lastMessageContent: newMessage.content,
               lastMessageAt: newMessage.createdAt,
               lastMessageSender: senderId,
-              unreadCounts: isFromMe 
-                ? { ...exists.unreadCounts, [currentUserId]: 0 } 
+              unreadCounts: isFromMe
+                ? { ...exists.unreadCounts, [currentUserId]: 0 }
                 : {
-                    ...exists.unreadCounts,
-                    [currentUserId]: (exists.unreadCounts?.[currentUserId] || 0) + 1,
-                  }
+                  ...exists.unreadCounts,
+                  [currentUserId]: (exists.unreadCounts?.[currentUserId] || 0) + 1,
+                }
             };
             return [updatedConvo, ...prevConvos.filter((c) => c._id !== newMessage.conversation)];
           } else {
-            fetchConversations(); 
+            fetchConversations();
             return prevConvos;
           }
         });
       };
 
       if (socketService.socket) {
-        socketService.socket.off('new_message'); 
+        socketService.socket.off('new_message');
         socketService.socket.on('new_message', handleLiveMessage);
         socketService.socket.off('messages_seen');
         socketService.socket.on('messages_seen', () => fetchConversations());
@@ -196,7 +196,7 @@ const ChatListScreen = ({ navigation }) => {
     if (!currentUserId) return null;
 
     const isGroup = item.type === 'group';
-    let displayName, avatarUri, isOnline = false;
+    let displayName, avatarUri, isOnline = false, lastSeenText = '';
 
     if (isGroup) {
       displayName = item.groupName || "Group Chat";
@@ -205,28 +205,50 @@ const ChatListScreen = ({ navigation }) => {
       const participants = item.participants || [];
       let otherUser = participants.find((p) => normalizeId(p) !== currentUserId);
       if (!otherUser && participants.length > 0) otherUser = participants[0];
-      
+
       displayName = otherUser?.username || "Unknown";
       avatarUri = otherUser?.profile?.avatar || otherUser?.avatar || "https://via.placeholder.com/50";
       isOnline = otherUser?.isOnline || false;
+
+      // Last seen
+      if (!isOnline && otherUser?.lastActive) {
+        const d = new Date(otherUser.lastActive);
+        const now = new Date();
+        const diffMin = Math.floor((now - d) / 60000);
+        if (diffMin < 60) lastSeenText = `${diffMin}m ago`;
+        else if (diffMin < 1440) lastSeenText = `${Math.floor(diffMin / 60)}h ago`;
+        else lastSeenText = d.toLocaleDateString();
+      }
     }
-    
+
     const lastSenderId = normalizeId(item.lastMessageSender);
     const iSentLast = lastSenderId === currentUserId;
     const unreadCount = item.unreadCounts?.[currentUserId] || 0;
     const showBadge = unreadCount > 0 && !iSentLast;
+
+    // Determine tick icon for sent messages
+    const renderTick = () => {
+      if (!iSentLast) return null;
+      const status = item.lastMessageStatus;
+      if (status === 'seen') {
+        return <Ionicons name="checkmark-done" size={16} color="#0095F6" style={{ marginRight: 4 }} />;
+      } else if (status === 'delivered') {
+        return <Ionicons name="checkmark-done" size={16} color={theme.colors.textSecondary} style={{ marginRight: 4 }} />;
+      }
+      return <Ionicons name="checkmark" size={16} color={theme.colors.textSecondary} style={{ marginRight: 4 }} />;
+    };
 
     return (
       <TouchableOpacity
         style={[styles.chatItem, { backgroundColor: theme.colors.background }]}
         activeOpacity={0.7}
         onPress={() => {
-          setConversations(prev => prev.map(c => 
-             c._id === item._id 
-             ? { ...c, unreadCounts: { ...c.unreadCounts, [currentUserId]: 0 } }
-             : c
+          setConversations(prev => prev.map(c =>
+            c._id === item._id
+              ? { ...c, unreadCounts: { ...c.unreadCounts, [currentUserId]: 0 } }
+              : c
           ));
-          
+
           navigation.navigate("ChatScreen", {
             conversationId: item._id,
             conversation: item,
@@ -250,22 +272,32 @@ const ChatListScreen = ({ navigation }) => {
           ) : (
             <>
               <Image source={{ uri: avatarUri }} style={styles.chatAvatar} />
-              {isOnline && <View style={styles.onlineIndicator} />}
+              {isOnline && <View style={[styles.onlineIndicator, { borderColor: isDark ? '#000' : '#FFF' }]} />}
             </>
           )}
         </View>
 
         <View style={styles.chatDetails}>
           <View style={styles.chatHeader}>
-            <Text style={[styles.chatName, { color: theme.colors.text }]} numberOfLines={1}>
-              {displayName}
-            </Text>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.chatName, { color: theme.colors.text }]} numberOfLines={1}>
+                {displayName}
+              </Text>
+              {!isGroup && !isOnline && lastSeenText ? (
+                <Text style={[styles.lastSeenText, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                  {lastSeenText}
+                </Text>
+              ) : !isGroup && isOnline ? (
+                <Text style={[styles.lastSeenText, { color: '#22C55E' }]}>Online</Text>
+              ) : null}
+            </View>
             <Text style={[styles.chatTime, { color: theme.colors.textSecondary }]}>
               {formatTime(item.lastMessageAt)}
             </Text>
           </View>
 
           <View style={styles.chatMessageRow}>
+            {renderTick()}
             <Text
               numberOfLines={1}
               style={[
@@ -280,9 +312,11 @@ const ChatListScreen = ({ navigation }) => {
               {iSentLast && "You: "}
               {item.lastMessageContent || "Start chatting..."}
             </Text>
-            
+
             {showBadge && (
-              <View style={styles.unreadDot} />
+              <View style={styles.unreadBadge}>
+                <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+              </View>
             )}
           </View>
         </View>
@@ -312,7 +346,7 @@ const ChatListScreen = ({ navigation }) => {
           <TouchableOpacity style={styles.iconButton}>
             <Ionicons name="videocam-outline" size={26} color={theme.colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.iconButton}
             onPress={() => setShowGroupModal(true)}
           >
@@ -343,36 +377,36 @@ const ChatListScreen = ({ navigation }) => {
       {/* Tabs */}
       {searchQuery === "" && (
         <View style={[styles.tabsContainer, { borderBottomColor: theme.colors.border }]}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.tab}
             onPress={() => setActiveTab("all")}
           >
             <Text style={[
-              styles.tabText, 
+              styles.tabText,
               { color: activeTab === "all" ? theme.colors.text : theme.colors.textSecondary },
               activeTab === "all" && styles.activeTabText
             ]}>
               All
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.tab}
             onPress={() => setActiveTab("dms")}
           >
             <Text style={[
-              styles.tabText, 
+              styles.tabText,
               { color: activeTab === "dms" ? theme.colors.text : theme.colors.textSecondary },
               activeTab === "dms" && styles.activeTabText
             ]}>
               DMs
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.tab}
             onPress={() => setActiveTab("groups")}
           >
             <Text style={[
-              styles.tabText, 
+              styles.tabText,
               { color: activeTab === "groups" ? theme.colors.text : theme.colors.textSecondary },
               activeTab === "groups" && styles.activeTabText
             ]}>
@@ -380,7 +414,7 @@ const ChatListScreen = ({ navigation }) => {
             </Text>
           </TouchableOpacity>
           <View style={[
-            styles.tabIndicator, 
+            styles.tabIndicator,
             { backgroundColor: theme.colors.text },
             activeTab === "dms" && { left: '33.33%' },
             activeTab === "groups" && { left: '66.66%' }
@@ -391,17 +425,17 @@ const ChatListScreen = ({ navigation }) => {
       {/* Active Now (only for DMs) */}
       {activeUsers.length > 0 && searchQuery === "" && activeTab !== "groups" && (
         <View style={styles.activeSection}>
-          <ScrollView 
-            horizontal 
+          <ScrollView
+            horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.activeScrollContent}
           >
             {activeUsers.map((user, index) => (
-              <TouchableOpacity 
+              <TouchableOpacity
                 key={index}
                 style={styles.activeUserItem}
                 onPress={() => {
-                  const conv = conversations.find(c => 
+                  const conv = conversations.find(c =>
                     c.type === 'direct' && c.participants.some(p => normalizeId(p) === normalizeId(user))
                   );
                   if (conv) {
@@ -415,14 +449,14 @@ const ChatListScreen = ({ navigation }) => {
               >
                 <View style={styles.activeBorder}>
                   <View style={[styles.activeUserImageContainer, { backgroundColor: theme.colors.background }]}>
-                    <Image 
-                      source={{ uri: user?.profile?.avatar || user?.avatar || "https://via.placeholder.com/50" }} 
-                      style={styles.activeUserImage} 
+                    <Image
+                      source={{ uri: user?.profile?.avatar || user?.avatar || "https://via.placeholder.com/50" }}
+                      style={styles.activeUserImage}
                     />
                   </View>
                 </View>
-                <Text 
-                  style={[styles.activeUserName, { color: theme.colors.text }]} 
+                <Text
+                  style={[styles.activeUserName, { color: theme.colors.text }]}
                   numberOfLines={1}
                 >
                   {user?.username || "User"}
@@ -444,27 +478,27 @@ const ChatListScreen = ({ navigation }) => {
         keyExtractor={(item) => item._id}
         renderItem={renderChatItem}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh} 
-            tintColor={theme.colors.primary} 
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={theme.colors.primary}
           />
         }
         showsVerticalScrollIndicator={false}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons 
-              name={activeTab === "groups" ? "people-outline" : "chatbubbles-outline"} 
-              size={64} 
-              color={theme.colors.textSecondary} 
+            <Ionicons
+              name={activeTab === "groups" ? "people-outline" : "chatbubbles-outline"}
+              size={64}
+              color={theme.colors.textSecondary}
             />
             <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
-              {searchQuery ? "No results found" : 
-               activeTab === "groups" ? "No groups yet" : "No messages yet"}
+              {searchQuery ? "No results found" :
+                activeTab === "groups" ? "No groups yet" : "No messages yet"}
             </Text>
             <Text style={[styles.emptySubtext, { color: theme.colors.textSecondary }]}>
-              {searchQuery ? "Try a different search" : 
-               activeTab === "groups" ? "Create a group to start chatting" : "Send a message to start chatting"}
+              {searchQuery ? "Try a different search" :
+                activeTab === "groups" ? "Create a group to start chatting" : "Send a message to start chatting"}
             </Text>
           </View>
         }
@@ -482,7 +516,7 @@ const ChatListScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  
+
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -641,6 +675,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
+  lastSeenText: {
+    fontSize: 11,
+    marginTop: 1,
+  },
   chatTime: {
     fontSize: 13,
     marginLeft: 8,
@@ -648,16 +686,25 @@ const styles = StyleSheet.create({
   chatMessageRow: {
     flexDirection: "row",
     alignItems: "center",
+    marginTop: 2,
   },
   chatMessage: {
     fontSize: 14,
   },
-  unreadDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: "#0095F6",
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
     marginLeft: 8,
+  },
+  unreadBadgeText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   emptyContainer: {

@@ -27,7 +27,7 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
     const minutes = Math.floor(diff / (1000 * 60));
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    
+
     if (minutes < 1) return 'Just now';
     if (minutes < 60) return `${minutes}m`;
     if (hours < 24) return `${hours}h`;
@@ -36,8 +36,8 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
   };
 
   return (
-    <View style={[styles.container, isNested && styles.nestedContainer]}>
-      <View style={styles.commentWrapper}>
+    <View style={[styles.container, isNested && styles.nestedContainer, isNested && { borderLeftColor: theme.colors?.border || 'rgba(0,0,0,0.1)' }]}>
+      <View style={[styles.commentWrapper, isNested && { paddingHorizontal: 10, paddingVertical: 8 }]}>
         <View style={styles.header}>
           {comment.author?.avatar ? (
             <Image source={{ uri: comment.author.avatar }} style={[styles.avatar, isNested && styles.nestedAvatar]} />
@@ -70,8 +70,8 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
 
             {/* GIF */}
             {comment.gif && (
-              <Image 
-                source={{ uri: comment.gif.url }} 
+              <Image
+                source={{ uri: comment.gif.url }}
                 style={styles.gifImage}
                 resizeMode="cover"
               />
@@ -83,15 +83,15 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
                 {timeAgo()}
               </Text>
 
-              <TouchableOpacity 
-                style={styles.actionButton} 
+              <TouchableOpacity
+                style={styles.actionButton}
                 onPress={handleLike}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons 
-                  name={isLiked ? "heart" : "heart-outline"} 
-                  size={16} 
-                  color={isLiked ? '#E91E63' : theme.colors.textSecondary} 
+                <Ionicons
+                  name={isLiked ? "heart" : "heart-outline"}
+                  size={16}
+                  color={isLiked ? '#E91E63' : theme.colors.textSecondary}
                 />
                 {likeCount > 0 && (
                   <Text style={[styles.actionText, { color: theme.colors.textSecondary }]}>
@@ -100,10 +100,10 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity 
-                style={styles.actionButton} 
+              <TouchableOpacity
+                style={styles.actionButton}
                 onPress={() => onReply?.(comment)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Text style={[styles.replyText, { color: theme.colors.textSecondary }]}>
                   Reply
@@ -114,15 +114,15 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
         </View>
 
         {/* Toggle replies button */}
-        {hasReplies && !isNested && (
-          <TouchableOpacity 
+        {hasReplies && (
+          <TouchableOpacity
             style={styles.toggleRepliesButton}
             onPress={() => setShowReplies(!showReplies)}
           >
-            <Ionicons 
-              name={showReplies ? "chevron-up" : "chevron-down"} 
-              size={14} 
-              color={theme.colors.primary} 
+            <Ionicons
+              name={showReplies ? "chevron-up" : "chevron-down"}
+              size={14}
+              color={theme.colors.primary}
             />
             <Text style={[styles.toggleRepliesText, { color: theme.colors.primary }]}>
               {showReplies ? 'Hide' : 'Show'} {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
@@ -131,8 +131,8 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
         )}
       </View>
 
-      {/* Nested replies */}
-      {hasReplies && showReplies && !isNested && (
+      {/* Nested replies — render at all levels, not just level 0 */}
+      {hasReplies && showReplies && (
         <View style={styles.repliesContainer}>
           {replies.map((reply) => (
             <CommentItem
@@ -140,6 +140,7 @@ const CommentItem = ({ comment, currentUserId, onReply, replies = [], level = 0 
               comment={reply}
               currentUserId={currentUserId}
               onReply={onReply}
+              replies={reply.replies || []}
               level={level + 1}
             />
           ))}
@@ -156,7 +157,9 @@ const styles = StyleSheet.create({
   },
   nestedContainer: {
     borderBottomWidth: 0,
-    marginLeft: 46,
+    marginLeft: 24,
+    borderLeftWidth: 2,
+    borderLeftColor: 'rgba(0,0,0,0.1)',
   },
   commentWrapper: {
     paddingHorizontal: 16,
@@ -211,7 +214,7 @@ const styles = StyleSheet.create({
   },
   gifImage: {
     width: '100%',
-    height: 200,
+    maxHeight: 200,
     borderRadius: 12,
     marginTop: 8,
     marginBottom: 8,

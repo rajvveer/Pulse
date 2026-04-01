@@ -44,7 +44,7 @@ const getTimeAgo = (createdAt) => {
   const minutes = Math.floor(diff / (1000 * 60));
   const hours = Math.floor(diff / (1000 * 60 * 60));
   const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  
+
   if (minutes < 1) return 'Just now';
   if (minutes < 60) return `${minutes}m`;
   if (hours < 24) return `${hours}h`;
@@ -54,33 +54,46 @@ const getTimeAgo = (createdAt) => {
 
 // ⚡️ PERFORMANCE: Extracted & Memoized Comment Component
 // This prevents the whole list from re-rendering when user types in the input box.
-const CommentItem = React.memo(({ 
-  comment, 
-  level = 0, 
-  expandedComments, 
-  toggleReplies, 
-  handleReply, 
-  handleLikeComment, 
-  theme 
+const CommentItem = React.memo(({
+  comment,
+  level = 0,
+  expandedComments,
+  toggleReplies,
+  handleReply,
+  handleLikeComment,
+  theme
 }) => {
   const replies = comment.replies || [];
   const hasReplies = replies.length > 0;
   const isExpanded = expandedComments.has(comment._id);
   const isNested = level > 0;
   const { avatarUrl, displayName } = getAuthorDetails(comment.author);
-  
-  // Limit visual indentation to 2 levels
-  const visualLevel = Math.min(level, 2);
-  const marginLeft = visualLevel * 40;
+
+  // ✅ FIX: Limit visual indentation to 3 levels max, with smaller step
+  // Old: level*40 → at level 2 = 80px (too much on 375px screens)
+  // New: level*24 capped at 3 → max 72px, with reduced inner padding
+  const visualLevel = Math.min(level, 3);
+  const marginLeft = visualLevel * 24;
+
+  // ✅ FIX: Reduce GIF height in nested comments to prevent overflow
+  const gifHeight = isNested ? 120 : 200;
 
   return (
     <View>
-      <View style={[styles.commentContainer, isNested && { marginLeft }]}>
-        <View style={styles.commentContent}>
+      <View style={[
+        styles.commentContainer,
+        isNested && {
+          marginLeft,
+          borderLeftWidth: 2,
+          borderLeftColor: theme.colors.border,
+          borderBottomWidth: 0,
+        }
+      ]}>
+        <View style={[styles.commentContent, isNested && { paddingHorizontal: 10, paddingVertical: 8 }]}>
           {avatarUrl ? (
-            <Image 
-              source={{ uri: avatarUrl }} 
-              style={[styles.commentAvatar, isNested && styles.replyAvatar]} 
+            <Image
+              source={{ uri: avatarUrl }}
+              style={[styles.commentAvatar, isNested && styles.replyAvatar]}
             />
           ) : (
             <View style={[styles.commentAvatar, isNested && styles.replyAvatar, { backgroundColor: theme.colors.primary }]}>
@@ -92,7 +105,7 @@ const CommentItem = React.memo(({
 
           <View style={styles.commentBody}>
             <View style={styles.commentHeader}>
-              <Text style={[styles.commentUsername, { color: theme.colors.text }]}>
+              <Text style={[styles.commentUsername, { color: theme.colors.text }, isNested && { fontSize: 13 }]}>
                 {displayName}
               </Text>
               {comment.author?.isVerified && (
@@ -101,13 +114,17 @@ const CommentItem = React.memo(({
             </View>
 
             {comment.content && (
-              <Text style={[styles.commentText, { color: theme.colors.text }]}>
+              <Text style={[styles.commentText, { color: theme.colors.text }, isNested && { fontSize: 13, lineHeight: 18 }]}>
                 {comment.content}
               </Text>
             )}
 
             {comment.gif && (
-              <Image source={{ uri: comment.gif.url }} style={styles.commentGif} resizeMode="cover" />
+              <Image
+                source={{ uri: comment.gif.url }}
+                style={[styles.commentGif, { height: gifHeight }]}
+                resizeMode="cover"
+              />
             )}
 
             <View style={styles.commentActions}>
@@ -115,34 +132,34 @@ const CommentItem = React.memo(({
                 {getTimeAgo(comment.createdAt)}
               </Text>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.commentActionBtn}
                 onPress={() => handleLikeComment(comment._id)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons 
-                  name={comment.isLiked ? "heart" : "heart-outline"} 
-                  size={16} 
-                  color={comment.isLiked ? '#E91E63' : theme.colors.textSecondary} 
+                <Ionicons
+                  name={comment.isLikedByMe ? "heart" : "heart-outline"}
+                  size={isNested ? 14 : 16}
+                  color={comment.isLikedByMe ? '#E91E63' : theme.colors.textSecondary}
                 />
-                {(comment.likes?.length > 0) && (
+                {(comment.likesCount > 0) && (
                   <Text style={[styles.commentActionText, { color: theme.colors.textSecondary }]}>
-                    {comment.likes.length}
+                    {comment.likesCount}
                   </Text>
                 )}
               </TouchableOpacity>
 
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.commentActionBtn}
                 onPress={() => handleReply(comment)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
                 <Text style={[styles.commentReplyText, { color: theme.colors.textSecondary }]}>Reply</Text>
               </TouchableOpacity>
             </View>
 
             {hasReplies && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.toggleRepliesBtn}
                 onPress={() => toggleReplies(comment._id)}
               >
@@ -158,9 +175,9 @@ const CommentItem = React.memo(({
 
       {/* Recursive Render */}
       {hasReplies && isExpanded && replies.map(reply => (
-        <CommentItem 
-          key={reply._id} 
-          comment={reply} 
+        <CommentItem
+          key={reply._id}
+          comment={reply}
           level={level + 1}
           expandedComments={expandedComments}
           toggleReplies={toggleReplies}
@@ -185,7 +202,7 @@ const PostDetailScreen = ({ route, navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(false);
-  
+
   const [commentText, setCommentText] = useState('');
   const [selectedGif, setSelectedGif] = useState(null);
   const [showGifPicker, setShowGifPicker] = useState(false);
@@ -193,7 +210,7 @@ const PostDetailScreen = ({ route, navigation }) => {
   const [sortBy, setSortBy] = useState('recent');
   const [replyingTo, setReplyingTo] = useState(null);
   const [expandedComments, setExpandedComments] = useState(new Set());
-  
+
   const headerOpacity = useRef(new Animated.Value(1)).current;
   const inputFocused = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef(null);
@@ -221,18 +238,18 @@ const PostDetailScreen = ({ route, navigation }) => {
         api.get(`/posts/${postId}`),
         api.get(`/posts/${postId}/comments`, { params: { sort: sortBy } })
       ]);
-      
+
       if (postRes.data.success) {
         const fetchedPost = postRes.data.data;
         // Fix author structure
         if (fetchedPost.author && fetchedPost.author.profile) {
-            fetchedPost.author.avatar = fetchedPost.author.profile.avatar || fetchedPost.author.avatar;
-            fetchedPost.author.displayName = fetchedPost.author.profile.displayName || fetchedPost.author.username;
+          fetchedPost.author.avatar = fetchedPost.author.profile.avatar || fetchedPost.author.avatar;
+          fetchedPost.author.displayName = fetchedPost.author.profile.displayName || fetchedPost.author.username;
         }
         setPost(fetchedPost);
         setIsBookmarked(fetchedPost.isBookmarked || false);
       }
-      
+
       if (commentRes.data.success) {
         const fetchedComments = commentRes.data.data;
         setComments(fetchedComments);
@@ -267,8 +284,8 @@ const PostDetailScreen = ({ route, navigation }) => {
 
   const handleBookmark = async () => {
     try {
-      const response = await api.post(`/posts/${postId}/bookmark`);
-      if (response.data.success) setIsBookmarked(!isBookmarked);
+      setIsBookmarked(!isBookmarked);
+      await api.post('/bookmarks', { itemId: postId, itemType: 'post' });
     } catch (error) { console.error(error); }
   };
 
@@ -303,17 +320,17 @@ const PostDetailScreen = ({ route, navigation }) => {
       };
 
       const response = await api.post(`/posts/${postId}/comments`, payload);
-      
+
       if (response.data.success) {
         await fetchData(true); // Ideally optimistically update here instead of refetch
         setCommentText('');
         setSelectedGif(null);
         setReplyingTo(null);
         Keyboard.dismiss();
-        
+
         // Scroll to top or bottom depending on sort
         setTimeout(() => {
-            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
         }, 500);
       }
     } catch (error) {
@@ -344,16 +361,46 @@ const PostDetailScreen = ({ route, navigation }) => {
   }, []);
 
   const handleLikeComment = useCallback(async (commentId) => {
-    // Implement API call here
-    console.log('Like comment:', commentId);
-  }, []);
+    // Optimistic update helper — recursively find and update the comment
+    const updateCommentLike = (commentsList, id) => {
+      return commentsList.map(c => {
+        if (c._id === id) {
+          const isCurrentlyLiked = c.isLikedByMe;
+          const currentUserId = user?._id || user?.id;
+          return {
+            ...c,
+            isLikedByMe: !isCurrentlyLiked,
+            likesCount: isCurrentlyLiked ? (c.likesCount || 1) - 1 : (c.likesCount || 0) + 1,
+            likes: isCurrentlyLiked
+              ? (c.likes || []).filter(id => id.toString() !== currentUserId)
+              : [...(c.likes || []), currentUserId],
+          };
+        }
+        if (c.replies && c.replies.length > 0) {
+          return { ...c, replies: updateCommentLike(c.replies, id) };
+        }
+        return c;
+      });
+    };
+
+    // Optimistic UI update
+    setComments(prev => updateCommentLike(prev, commentId));
+
+    try {
+      await api.post(`/posts/${postId}/comments/${commentId}/like`);
+    } catch (error) {
+      console.error('Like comment error:', error);
+      // Revert on error
+      setComments(prev => updateCommentLike(prev, commentId));
+    }
+  }, [postId, user]);
 
   const renderHeader = () => {
     if (!post) return null;
     return (
       <View>
-        <PostDetailCard 
-          post={post} 
+        <PostDetailCard
+          post={post}
           onLike={handleLikePost}
           onShare={handleShare}
           onBookmark={handleBookmark}
@@ -364,7 +411,7 @@ const PostDetailScreen = ({ route, navigation }) => {
             Comments ({post.stats?.comments || 0})
           </Text>
           {comments.length > 0 && (
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={toggleSort}
               style={[styles.sortButton, { backgroundColor: isDark ? '#333' : '#F2F3F5' }]}
             >
@@ -392,13 +439,13 @@ const PostDetailScreen = ({ route, navigation }) => {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
+
       {/* ✅ FIXED KEYBOARD BEHAVIOR 
          Fixed behavior + offset ensures no bouncing on Android/iOS
       */}
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
         {/* Header */}
@@ -417,9 +464,9 @@ const PostDetailScreen = ({ route, navigation }) => {
           data={comments}
           // ✅ Use Memoized Component
           renderItem={({ item }) => (
-            <CommentItem 
-              comment={item} 
-              level={0} 
+            <CommentItem
+              comment={item}
+              level={0}
               expandedComments={expandedComments}
               toggleReplies={toggleReplies}
               handleReply={handleReply}
@@ -431,10 +478,10 @@ const PostDetailScreen = ({ route, navigation }) => {
           ListHeaderComponent={renderHeader}
           ListEmptyComponent={
             !isLoading ? (
-                <View style={styles.emptyContainer}>
-                    <Ionicons name="chatbubbles-outline" size={64} color={theme.colors.textSecondary} />
-                    <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Be the first to comment</Text>
-                </View>
+              <View style={styles.emptyContainer}>
+                <Ionicons name="chatbubbles-outline" size={64} color={theme.colors.textSecondary} />
+                <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>Be the first to comment</Text>
+              </View>
             ) : null
           }
           contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}
@@ -447,15 +494,15 @@ const PostDetailScreen = ({ route, navigation }) => {
 
         {/* Input Area */}
         <Animated.View style={[
-          styles.inputWrapper, 
-          { 
+          styles.inputWrapper,
+          {
             backgroundColor: theme.colors.surface,
             borderTopColor: theme.colors.border,
             // ✅ Fix bottom padding for notched devices when keyboard closed
-            paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom, 10) : 10, 
+            paddingBottom: Math.max(insets.bottom, 14),
           }
         ]}>
-          
+
           {replyingTo && (
             <View style={[styles.replyIndicator, { backgroundColor: isDark ? '#2A2A2A' : '#F2F3F5' }]}>
               <View style={{ flex: 1 }}>
@@ -469,7 +516,7 @@ const PostDetailScreen = ({ route, navigation }) => {
               </TouchableOpacity>
             </View>
           )}
-          
+
           {selectedGif && (
             <View style={styles.gifPreviewContainer}>
               <Image source={{ uri: selectedGif.preview || selectedGif.url }} style={styles.gifPreviewImage} resizeMode="cover" />
@@ -503,16 +550,16 @@ const PostDetailScreen = ({ route, navigation }) => {
 
             <View style={styles.inputActions}>
               <TouchableOpacity onPress={() => setShowGifPicker(true)} style={styles.iconButton}>
-                <Ionicons 
-                  name={selectedGif ? "image" : "happy-outline"} 
-                  size={22} 
-                  color={selectedGif ? theme.colors.primary : theme.colors.textSecondary} 
+                <Ionicons
+                  name={selectedGif ? "image" : "happy-outline"}
+                  size={22}
+                  color={selectedGif ? theme.colors.primary : theme.colors.textSecondary}
                 />
               </TouchableOpacity>
 
               {(commentText.trim().length > 0 || selectedGif) && (
-                <TouchableOpacity 
-                  onPress={handleSubmitComment} 
+                <TouchableOpacity
+                  onPress={handleSubmitComment}
                   style={[styles.sendButton, { backgroundColor: theme.colors.primary }]}
                   disabled={isSubmitting}
                 >
@@ -553,7 +600,7 @@ const styles = StyleSheet.create({
   sortText: { fontSize: 13, fontWeight: '600' },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 16, marginTop: 16, fontWeight: '500' },
-  
+
   // Comment Styles
   commentContainer: { borderBottomWidth: 0.5, borderBottomColor: 'rgba(0,0,0,0.05)' },
   commentContent: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12 },
@@ -573,7 +620,7 @@ const styles = StyleSheet.create({
   commentReplyText: { fontSize: 13, fontWeight: '700' },
   toggleRepliesBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 12 },
   toggleRepliesText: { fontSize: 13, fontWeight: '600' },
-  
+
   // Input Styles
   inputWrapper: {
     paddingHorizontal: 16, paddingTop: 12, borderTopWidth: 0.5,

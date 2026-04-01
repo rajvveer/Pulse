@@ -1,13 +1,16 @@
 import React, { useMemo, useCallback, useState, useRef } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  StyleSheet,
   TouchableOpacity,
   Dimensions,
   Pressable,
   Animated,
-  FlatList, // ✅ Switched to FlatList for performance
+  FlatList,
+  Modal,
+  Share,
+  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useNavigation } from '@react-navigation/native';
@@ -15,25 +18,36 @@ import { useSelector } from 'react-redux';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
+import { getValidAvatarUrl, getDisplayName } from '../utils/avatarHelper';
+import api from '../services/api';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const CARD_MARGIN = 16;
 const IMAGE_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2) - 2; // Account for border
 
-const PostCard = ({ post, onLike, onComment, showActions = true }) => {
+const PostCard = ({ post, onLike, onComment, onBookmark, onDelete, showActions = true }) => {
   const navigation = useNavigation();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const currentUser = useSelector(state => state.auth.user);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [isBookmarked, setIsBookmarked] = useState(post.isBookmarked || false);
+  const [menuVisible, setMenuVisible] = useState(false);
   const lastTap = useRef(null);
 
   // Animation Refs
   const likeScale = useRef(new Animated.Value(1)).current;
+  const menuFade = useRef(new Animated.Value(0)).current;
 
-  // ✅ Robust Avatar & Name Logic
-  const avatarUrl = post.author?.profile?.avatar || post.author?.avatar;
-  const displayName = post.author?.profile?.displayName || post.author?.name || post.author?.username || 'Unknown';
+  // ✅ Robust Avatar & Name Logic (filters broken default URLs)
+  const avatarUrl = getValidAvatarUrl(post.author);
+  const displayName = getDisplayName(post.author);
+
+  // ✅ Check if the post belongs to the current user
+  const isOwnPost = useMemo(() => {
+    if (!currentUser || !post.author) return false;
+    return (post.author._id === currentUser._id) || (post.author.username === currentUser.username);
+  }, [currentUser, post.author]);
 
   // ✅ MEMOIZED: Navigation Handlers
   const handlePostPress = useCallback(() => {
@@ -41,7 +55,7 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
   }, [navigation, post._id]);
 
   const handleUserPress = useCallback(() => {
-    if (post.isAnonymous || !post.author) return; 
+    if (post.isAnonymous || !post.author) return;
     const isMe = (post.author._id === currentUser?._id) || (post.author.username === currentUser?.username);
     if (isMe) {
       navigation.navigate('Profile', { screen: 'ProfileMain' });
@@ -63,7 +77,7 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
   const handleImagePress = useCallback(() => {
     const now = Date.now();
     const DOUBLE_PRESS_DELAY = 300;
-    
+
     if (lastTap.current && (now - lastTap.current) < DOUBLE_PRESS_DELAY) {
       if (!post.isLiked) handleLike();
     } else {
@@ -76,6 +90,157 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
     if (onComment) onComment(post._id);
     else navigation.navigate('PostDetail', { postId: post._id });
   }, [onComment, navigation, post._id]);
+
+  const handleBookmark = useCallback(() => {
+    setIsBookmarked(prev => !prev);
+    if (onBookmark) {
+      onBookmark(post._id);
+    } else {
+      api.post('/bookmarks', { itemId: post._id, itemType: 'post' }).catch(console.error);
+    }
+  }, [onBookmark, post._id]);
+
+  // ===== THREE-DOT MENU HANDLERS =====
+  const openMenu = useCallback(() => {
+    setMenuVisible(true);
+    Animated.timing(menuFade, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+  }, []);
+
+  const closeMenu = useCallback(() => {
+    Animated.timing(menuFade, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
+      setMenuVisible(false);
+    });
+  }, []);
+
+  const handleEditPost = useCallback(() => {
+    closeMenu();
+    setTimeout(() => {
+      navigation.navigate('EditPost', { postId: post._id, post });
+    }, 200);
+  }, [navigation, post]);
+
+  const handleDeletePost = useCallback(() => {
+    closeMenu();
+    setTimeout(() => {
+      Alert.alert(
+        'Delete Post',
+        'Are you sure you want to delete this post? This action cannot be undone.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await api.delete(`/posts/${post._id}`);
+                Alert.alert('Deleted', 'Your post has been deleted.');
+                if (onDelete) onDelete(post._id);
+              } catch (error) {
+                console.error('Delete post error:', error);
+                Alert.alert('Error', 'Failed to delete the post. Please try again.');
+              }
+            },
+          },
+        ]
+      );
+    }, 200);
+  }, [post._id, onDelete]);
+
+  const handleReportPost = useCallback(() => {
+    closeMenu();
+    setTimeout(() => {
+      Alert.alert(
+        'Report Post',
+        'Why are you reporting this post?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Spam',
+            onPress: () => submitReport('spam'),
+          },
+          {
+            text: 'Inappropriate',
+            onPress: () => submitReport('inappropriate'),
+          },
+          {
+            text: 'Harassment',
+            onPress: () => submitReport('harassment'),
+          },
+        ]
+      );
+    }, 200);
+  }, [post._id]);
+
+  const submitReport = useCallback(async (reason) => {
+    try {
+      await api.post(`/posts/${post._id}/report`, { reason });
+      Alert.alert('Reported', 'Thanks for letting us know. We\'ll review this post.');
+    } catch (error) {
+      console.error('Report post error:', error);
+      Alert.alert('Reported', 'Thanks for your report. We\'ll look into it.');
+    }
+  }, [post._id]);
+
+  const handleCopyText = useCallback(async () => {
+    closeMenu();
+    const textToCopy = post.content?.text || '';
+    if (textToCopy) {
+      try {
+        // Use expo-clipboard if available, fallback to Share
+        const ExpoClipboard = await import('expo-clipboard').catch(() => null);
+        if (ExpoClipboard) {
+          await ExpoClipboard.setStringAsync(textToCopy);
+          Alert.alert('Copied', 'Post text copied to clipboard.');
+        } else {
+          await Share.share({ message: textToCopy });
+        }
+      } catch {
+        await Share.share({ message: textToCopy });
+      }
+    } else {
+      Alert.alert('Nothing to copy', 'This post has no text content.');
+    }
+  }, [post.content?.text]);
+
+  const handleSharePost = useCallback(async () => {
+    closeMenu();
+    setTimeout(async () => {
+      try {
+        const shareText = post.content?.text
+          ? `${post.content.text.substring(0, 200)}${post.content.text.length > 200 ? '...' : ''}`
+          : 'Check out this post on Pulse!';
+        await Share.share({
+          message: shareText,
+          url: `pulse://post/${post._id}`,
+        });
+      } catch (error) {
+        console.error('Share error:', error);
+      }
+    }, 200);
+  }, [post._id, post.content?.text]);
+
+  // ✅ MEMOIZED: Menu items based on ownership
+  const menuItems = useMemo(() => {
+    const items = [];
+
+    if (isOwnPost) {
+      items.push(
+        { icon: 'create-outline', label: 'Edit Post', onPress: handleEditPost, color: theme.colors.text },
+        { icon: 'trash-outline', label: 'Delete Post', onPress: handleDeletePost, color: '#E53935' },
+      );
+    } else {
+      items.push(
+        { icon: 'flag-outline', label: 'Report Post', onPress: handleReportPost, color: '#E53935' },
+      );
+    }
+
+    items.push(
+      { icon: 'copy-outline', label: 'Copy Text', onPress: handleCopyText, color: theme.colors.text },
+      { icon: 'share-social-outline', label: 'Share Post', onPress: handleSharePost, color: theme.colors.text },
+    );
+
+    return items;
+  }, [isOwnPost, theme.colors.text, handleEditPost, handleDeletePost, handleReportPost, handleCopyText, handleSharePost]);
 
   // ✅ MEMOIZED: Formats
   const formatTimestamp = useMemo(() => {
@@ -109,31 +274,40 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
 
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current;
 
-  const renderImageItem = useCallback(({ item }) => (
+  const renderImageItem = useCallback(({ item, index }) => (
     <Pressable onPress={handleImagePress} activeOpacity={0.9}>
-      <Image 
-        source={{ uri: item.url }} 
+      <Image
+        source={{ uri: item.url }}
         style={[styles.postImage, { width: IMAGE_WIDTH }]}
-        resizeMode="cover"
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        recyclingKey={post._id + '-img-' + index}
+        placeholder={{ blurhash: 'L6PZfSi_.AyE_3t7t7R**0o#DgR4' }}
+        transition={200}
       />
     </Pressable>
-  ), [handleImagePress]);
+  ), [handleImagePress, post._id]);
 
   return (
     <View style={[styles.postCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-      
+
       {/* --- HEADER --- */}
       <View style={styles.postHeader}>
         <Pressable style={styles.userInfo} onPress={handleUserPress} disabled={post.isAnonymous}>
           <View style={styles.userRow}>
             {avatarUrl ? (
-              <Image source={{ uri: avatarUrl }} style={styles.avatar} />
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatar}
+                cachePolicy="memory-disk"
+                recyclingKey={post._id + '-avatar'}
+              />
             ) : (
               <View style={[styles.avatar, { backgroundColor: theme.colors.primary + '20' }]}>
                 <Text style={[styles.avatarText, { color: theme.colors.primary }]}>{displayName.charAt(0).toUpperCase()}</Text>
               </View>
             )}
-            
+
             <View style={styles.userDetails}>
               <View style={styles.usernameRow}>
                 <Text style={[styles.username, { color: theme.colors.text }]} numberOfLines={1}>
@@ -159,7 +333,7 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
           </View>
         </Pressable>
 
-        <TouchableOpacity style={styles.moreButton} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+        <TouchableOpacity style={styles.moreButton} onPress={openMenu} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="ellipsis-horizontal" size={20} color={theme.colors.textSecondary} />
         </TouchableOpacity>
       </View>
@@ -190,7 +364,7 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
             windowSize={3}
             removeClippedSubviews={false} // Crucial for nested lists
           />
-          
+
           {hasMultipleImages && (
             <>
               <View style={[styles.imageCounter, { backgroundColor: 'rgba(0,0,0,0.6)' }]}>
@@ -221,10 +395,10 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
         <View style={[styles.actions, { borderTopColor: theme.colors.border }]}>
           <TouchableOpacity style={styles.actionButton} onPress={handleLike} activeOpacity={0.7}>
             <Animated.View style={{ transform: [{ scale: likeScale }] }}>
-              <Ionicons 
-                name={post.isLiked ? "heart" : "heart-outline"} 
-                size={24} 
-                color={post.isLiked ? '#E91E63' : theme.colors.textSecondary} 
+              <Ionicons
+                name={post.isLiked ? "heart" : "heart-outline"}
+                size={24}
+                color={post.isLiked ? '#E91E63' : theme.colors.textSecondary}
               />
             </Animated.View>
             <Text style={[styles.actionText, { color: post.isLiked ? '#E91E63' : theme.colors.textSecondary }]}>
@@ -239,17 +413,87 @@ const PostCard = ({ post, onLike, onComment, showActions = true }) => {
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.actionButton} onPress={handleSharePost} activeOpacity={0.7}>
             <Ionicons name="share-outline" size={23} color={theme.colors.textSecondary} />
           </TouchableOpacity>
 
           <View style={{ flex: 1 }} />
 
-          <TouchableOpacity style={styles.actionButton} activeOpacity={0.7}>
-            <Ionicons name="bookmark-outline" size={23} color={theme.colors.textSecondary} />
+          <TouchableOpacity style={styles.actionButton} onPress={handleBookmark} activeOpacity={0.7}>
+            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={23} color={isBookmarked ? theme.colors.primary : theme.colors.textSecondary} />
           </TouchableOpacity>
         </View>
       )}
+
+      {/* --- BOTTOM SHEET MENU --- */}
+      <Modal
+        visible={menuVisible}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={closeMenu}
+      >
+        <Pressable style={styles.menuOverlay} onPress={closeMenu}>
+          <Animated.View
+            style={[
+              styles.menuSheet,
+              {
+                backgroundColor: isDark ? '#1E1E1E' : '#FFFFFF',
+                opacity: menuFade,
+                transform: [{
+                  translateY: menuFade.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [100, 0],
+                  }),
+                }],
+              },
+            ]}
+          >
+            {/* Handle bar */}
+            <View style={[styles.menuHandle, { backgroundColor: isDark ? '#555' : '#D0D0D0' }]} />
+
+            {/* Post preview */}
+            <View style={[styles.menuPostPreview, { borderBottomColor: isDark ? '#333' : '#F0F0F0' }]}>
+              <Text style={[styles.menuPreviewLabel, { color: theme.colors.textSecondary }]} numberOfLines={1}>
+                {isOwnPost ? 'Your post' : `Post by ${post.isAnonymous ? 'Anonymous' : displayName}`}
+              </Text>
+              {post.content?.text && (
+                <Text style={[styles.menuPreviewText, { color: theme.colors.text }]} numberOfLines={2}>
+                  {post.content.text}
+                </Text>
+              )}
+            </View>
+
+            {/* Menu items */}
+            {menuItems.map((item, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.menuItem,
+                  index < menuItems.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: isDark ? '#333' : '#F0F0F0' },
+                ]}
+                onPress={item.onPress}
+                activeOpacity={0.6}
+              >
+                <View style={[styles.menuIconWrap, { backgroundColor: (item.color === '#E53935' ? 'rgba(229,57,53,0.1)' : (isDark ? '#2A2A2A' : '#F5F5F5')) }]}>
+                  <Ionicons name={item.icon} size={20} color={item.color} />
+                </View>
+                <Text style={[styles.menuLabel, { color: item.color }]}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={18} color={isDark ? '#555' : '#CCC'} />
+              </TouchableOpacity>
+            ))}
+
+            {/* Cancel button */}
+            <TouchableOpacity
+              style={[styles.menuCancelButton, { backgroundColor: isDark ? '#2A2A2A' : '#F5F5F5' }]}
+              onPress={closeMenu}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.menuCancelText, { color: theme.colors.text }]}>Cancel</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -291,6 +535,76 @@ const styles = StyleSheet.create({
   actions: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 12, borderTopWidth: 1 },
   actionButton: { flexDirection: 'row', alignItems: 'center', marginRight: 20, gap: 6 },
   actionText: { fontSize: 14, fontWeight: '600' },
+
+  // ✅ Bottom Sheet Menu Styles
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  menuSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 12,
+    paddingBottom: 34,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 20,
+  },
+  menuHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
+  menuPostPreview: {
+    paddingBottom: 14,
+    marginBottom: 6,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  menuPreviewLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  menuPreviewText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+  },
+  menuIconWrap: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  menuLabel: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  menuCancelButton: {
+    marginTop: 12,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  menuCancelText: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
 });
 
 // ✅ MEMOIZED TO PREVENT UNNECESSARY RE-RENDERS

@@ -4,8 +4,10 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useSelector } from "react-redux";
 import { useTheme } from "@react-navigation/native";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Platform, View } from "react-native";
+import { Platform, View, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTheme as useAppTheme } from "../contexts/ThemeContext";
+import { getTheme } from "../styles/theme";
 
 // Core imports
 import AuthStack from "./AuthStack";
@@ -22,73 +24,114 @@ import ChatScreen from "../screens/Chat/ChatScreen";
 import ReelsScreen from "../screens/ReelsScreen";
 import CreateReelScreen from "../screens/CreateReelScreen";
 
-// NEW FEATURE SCREENS
+// Feature screens
 import WhisperScreen from "../screens/WhisperScreen";
 import PulseDropsScreen from "../screens/PulseDropsScreen";
 import ChainsScreen from "../screens/ChainsScreen";
 import AlterEgoScreen from "../screens/AlterEgoScreen";
+import SearchScreen from "../screens/SearchScreen";
+import BookmarksScreen from "../screens/BookmarksScreen";
+import PushNotificationHandler from "../components/Notifications/PushNotificationHandler";
+import RouletteScreen from "../screens/RouletteScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
-const MainTabs = () => {
+const TAB_ICONS = {
+  Feed: { active: 'home', inactive: 'home-outline' },
+  Nearby: { active: 'map', inactive: 'map-outline' },
+  Reels: { active: 'videocam', inactive: 'videocam-outline' },
+  Create: { active: 'add-circle', inactive: 'add-circle-outline' },
+  Chat: { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
+  Whisper: { active: 'eye-off', inactive: 'eye-off-outline' },
+};
+
+const VISIBLE_TABS = ['Feed', 'Nearby', 'Reels', 'Create', 'Chat', 'Whisper'];
+
+const CustomTabBar = ({ state, descriptors, navigation }) => {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarShowLabel: false,
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
+    <View style={{
+      flexDirection: 'row',
+      backgroundColor: colors.card,
+      paddingTop: 10,
+      paddingBottom: Math.max(insets.bottom, 10),
+      borderTopWidth: 0,
+      elevation: 10,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: -2 },
+      shadowOpacity: 0.1,
+      shadowRadius: 4,
+    }}>
+      {state.routes.map((route, index) => {
+        if (!VISIBLE_TABS.includes(route.name)) return null;
 
-          if (route.name === "Feed") {
-            iconName = focused ? "home" : "home-outline";
-          } else if (route.name === "Nearby") {
-            iconName = focused ? "map" : "map-outline";
+        const isFocused = state.index === index;
+        const iconSet = TAB_ICONS[route.name];
+        if (!iconSet) return null;
+
+        const onPress = () => {
+          const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+          if (!isFocused && !event.defaultPrevented) {
+            navigation.navigate(route.name);
           }
-          else if (route.name === "Reels") {
-            iconName = focused ? "videocam" : "videocam-outline";
-          }
-          else if (route.name === "Create") {
-            iconName = focused ? "add-circle" : "add-circle-outline";
-            return (
+        };
+
+        if (route.name === 'Create') {
+          return (
+            <TouchableOpacity
+              key={route.key}
+              onPress={onPress}
+              activeOpacity={0.7}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+            >
               <View style={{
-                top: -10,
+                marginTop: -18,
                 shadowColor: colors.primary,
                 shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 0.3,
                 shadowRadius: 4,
+                elevation: 5,
               }}>
-                <Ionicons name={iconName} size={42} color={colors.primary} />
+                <Ionicons name={isFocused ? iconSet.active : iconSet.inactive} size={44} color={colors.primary} />
               </View>
-            );
-          } else if (route.name === "Chat") {
-            iconName = focused ? "chatbubbles" : "chatbubbles-outline";
-          } else if (route.name === "Profile") {
-            iconName = focused ? "person" : "person-outline";
-          }
+            </TouchableOpacity>
+          );
+        }
 
-          return <Ionicons name={iconName} size={24} color={color} />;
-        },
-        tabBarStyle: {
-          backgroundColor: colors.card,
-          borderTopWidth: 0,
-          elevation: 10,
-          height: Platform.OS === "ios" ? 85 : 60 + (insets.bottom > 0 ? insets.bottom : 10),
-          paddingTop: 8,
-          paddingBottom: Platform.OS === "ios" ? 25 : (insets.bottom > 0 ? insets.bottom : 10),
-        },
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.text,
+        return (
+          <TouchableOpacity
+            key={route.key}
+            onPress={onPress}
+            activeOpacity={0.7}
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}
+          >
+            <Ionicons
+              name={isFocused ? iconSet.active : iconSet.inactive}
+              size={24}
+              color={isFocused ? colors.primary : colors.text}
+            />
+          </TouchableOpacity>
+        );
       })}
+    </View>
+  );
+};
+
+const MainTabs = () => {
+  return (
+    <Tab.Navigator
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{ headerShown: false }}
     >
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="Nearby" component={NearbyScreen} />
       <Tab.Screen name="Reels" component={ReelsScreen} />
       <Tab.Screen name="Create" component={CreatePostScreen} />
       <Tab.Screen name="Chat" component={ChatListScreen} />
+      <Tab.Screen name="Whisper" component={WhisperScreen} />
       <Tab.Screen name="Profile" component={ProfileStack} listeners={({ navigation }) => ({ tabPress: (e) => { navigation.navigate("Profile", { screen: "ProfileMain" }); }, })} />
     </Tab.Navigator>
   );
@@ -96,36 +139,48 @@ const MainTabs = () => {
 
 export const RootNavigator = () => {
   const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
+  const { isDark } = useAppTheme();
+  const appTheme = getTheme(isDark);
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {isAuthenticated ? (
-        <>
-          <Stack.Screen name="Main" component={MainTabs} />
+    <>
+      {/* Push Notification Handler - must be outside navigator */}
+      {isAuthenticated && <PushNotificationHandler />}
 
-          {/* REGISTER CREATE REEL SCREEN */}
-          <Stack.Screen
-            name="CreateReel"
-            component={CreateReelScreen}
-            options={{ presentation: 'modal' }}
-          />
+      <Stack.Navigator screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: appTheme.colors.background },
+      }}>
+        {isAuthenticated ? (
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
 
-          {/* CORE SCREENS */}
-          <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ presentation: "card" }} />
-          <Stack.Screen name="UserProfile" component={UserProfileScreen} options={{ presentation: "card" }} />
-          <Stack.Screen name="Connections" component={ConnectionsScreen} />
-          <Stack.Screen name="EditPost" component={EditPostScreen} options={{ presentation: 'modal' }} />
-          <Stack.Screen name="ChatScreen" component={ChatScreen} options={{ presentation: 'card' }} />
+            {/* REGISTER CREATE REEL SCREEN */}
+            <Stack.Screen
+              name="CreateReel"
+              component={CreateReelScreen}
+              options={{ presentation: 'modal' }}
+            />
 
-          {/* NEW FEATURE SCREENS */}
-          <Stack.Screen name="Whisper" component={WhisperScreen} options={{ presentation: 'card' }} />
-          <Stack.Screen name="PulseDrops" component={PulseDropsScreen} options={{ presentation: 'card' }} />
-          <Stack.Screen name="Chains" component={ChainsScreen} options={{ presentation: 'card' }} />
-          <Stack.Screen name="AlterEgo" component={AlterEgoScreen} options={{ presentation: 'card' }} />
-        </>
-      ) : (
-        <Stack.Screen name="Auth" component={AuthStack} />
-      )}
-    </Stack.Navigator>
+            {/* CORE SCREENS */}
+            <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ presentation: "card" }} />
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} options={{ presentation: "card" }} />
+            <Stack.Screen name="Connections" component={ConnectionsScreen} />
+            <Stack.Screen name="EditPost" component={EditPostScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="ChatScreen" component={ChatScreen} options={{ presentation: 'card' }} />
+
+            {/* NEW FEATURE SCREENS */}
+            <Stack.Screen name="PulseDrops" component={PulseDropsScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="Chains" component={ChainsScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="AlterEgo" component={AlterEgoScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="Search" component={SearchScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="Bookmarks" component={BookmarksScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="Roulette" component={RouletteScreen} options={{ presentation: 'modal' }} />
+          </>
+        ) : (
+          <Stack.Screen name="Auth" component={AuthStack} />
+        )}
+      </Stack.Navigator>
+    </>
   );
 };

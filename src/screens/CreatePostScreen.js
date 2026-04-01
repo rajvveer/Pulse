@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform,
   FlatList, Dimensions, Animated, Vibration, Keyboard
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -21,6 +21,7 @@ const CreatePostScreen = ({ navigation }) => {
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const { user } = useSelector(state => state.auth);
+  const insets = useSafeAreaInsets();
 
   // State
   const [text, setText] = useState('');
@@ -74,7 +75,7 @@ const CreatePostScreen = ({ navigation }) => {
   const takePhoto = useCallback(async () => {
     triggerHaptic();
     if (images.length >= MAX_IMAGES) return Alert.alert('Limit Reached', `Max ${MAX_IMAGES} photos.`);
-    
+
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') return Alert.alert('Permission Denied', 'Camera access needed.');
 
@@ -170,8 +171,8 @@ const CreatePostScreen = ({ navigation }) => {
   const renderImageItem = ({ item, index }) => (
     <View style={styles.mediaCard}>
       <Image source={{ uri: item.uri }} style={styles.mediaImage} resizeMode="cover" />
-      <TouchableOpacity 
-        style={styles.removeMediaBtn} 
+      <TouchableOpacity
+        style={styles.removeMediaBtn}
         onPress={() => setImages(prev => prev.filter((_, i) => i !== index))}
       >
         <Ionicons name="close" size={14} color="#FFF" />
@@ -184,23 +185,23 @@ const CreatePostScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      
+
       {/* 1. Header: Clean & Functional */}
       <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
         <TouchableOpacity onPress={handleBack} style={styles.cancelBtn}>
           <Text style={[styles.cancelText, { color: theme.colors.text }]}>Cancel</Text>
         </TouchableOpacity>
-        
+
         {/* ✅ NEW REEL BUTTON ADDED HERE */}
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.reelButton}
           onPress={() => navigation.navigate('CreateReel')}
         >
-          <Ionicons name="videocam" size={18} color="#FFF" />
-          <Text style={styles.reelButtonText}>Reel</Text>
+          <Ionicons name="videocam-outline" size={16} color={theme.colors.primary} />
+          <Text style={[styles.reelButtonText, { color: theme.colors.primary }]}>Reel</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={[styles.postBtn, { backgroundColor: canPost ? theme.colors.primary : theme.colors.border }]}
           disabled={!canPost}
           onPress={handlePost}
@@ -211,17 +212,17 @@ const CreatePostScreen = ({ navigation }) => {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
-        <ScrollView 
-          style={styles.scrollContainer} 
+        <ScrollView
+          style={styles.scrollContainer}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          
+
           {/* Identity Switcher */}
           <Animated.View style={[styles.identityRow, { opacity: fadeAnim }]}>
             <View style={styles.avatarContainer}>
@@ -239,16 +240,16 @@ const CreatePostScreen = ({ navigation }) => {
                 )
               )}
             </View>
-            
+
             <TouchableOpacity onPress={toggleAnonymous} style={styles.identitySelector}>
               <Text style={[styles.identityName, { color: theme.colors.text }]}>
                 {isAnonymous ? 'Anonymous' : (user?.username || 'You')}
               </Text>
               <View style={[styles.privacyBadge, { borderColor: theme.colors.border }]}>
-                 <Text style={[styles.privacyText, { color: theme.colors.textSecondary }]}>
-                   {isAnonymous ? 'Hidden Identity' : 'Public'}
-                 </Text>
-                 <Ionicons name="chevron-down" size={12} color={theme.colors.textSecondary} />
+                <Text style={[styles.privacyText, { color: theme.colors.textSecondary }]}>
+                  {isAnonymous ? 'Hidden Identity' : 'Public'}
+                </Text>
+                <Ionicons name="chevron-down" size={12} color={theme.colors.textSecondary} />
               </View>
             </TouchableOpacity>
           </Animated.View>
@@ -269,15 +270,15 @@ const CreatePostScreen = ({ navigation }) => {
           {/* Poll Creator */}
           {showPoll && (
             <View style={[styles.pollContainer, { borderColor: theme.colors.border }]}>
-               <View style={styles.pollOption}>
-                 <TextInput placeholder="Option 1" placeholderTextColor={theme.colors.textSecondary} style={[styles.pollInput, {color: theme.colors.text}]} />
-               </View>
-               <View style={[styles.pollOption, { marginTop: 8 }]}>
-                 <TextInput placeholder="Option 2" placeholderTextColor={theme.colors.textSecondary} style={[styles.pollInput, {color: theme.colors.text}]} />
-               </View>
-               <TouchableOpacity onPress={() => setShowPoll(false)} style={styles.removePollBtn}>
-                 <Text style={{color: theme.colors.error, fontSize: 12}}>Remove Poll</Text>
-               </TouchableOpacity>
+              <View style={styles.pollOption}>
+                <TextInput placeholder="Option 1" placeholderTextColor={theme.colors.textSecondary} style={[styles.pollInput, { color: theme.colors.text }]} />
+              </View>
+              <View style={[styles.pollOption, { marginTop: 8 }]}>
+                <TextInput placeholder="Option 2" placeholderTextColor={theme.colors.textSecondary} style={[styles.pollInput, { color: theme.colors.text }]} />
+              </View>
+              <TouchableOpacity onPress={() => setShowPoll(false)} style={styles.removePollBtn}>
+                <Text style={{ color: theme.colors.error, fontSize: 12 }}>Remove Poll</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -306,17 +307,18 @@ const CreatePostScreen = ({ navigation }) => {
               </View>
             )}
             {text.length > MAX_TEXT_LENGTH * 0.9 && (
-               <Text style={[styles.charCount, { color: 'orange' }]}>{MAX_TEXT_LENGTH - text.length} left</Text>
+              <Text style={[styles.charCount, { color: 'orange' }]}>{MAX_TEXT_LENGTH - text.length} left</Text>
             )}
           </View>
 
-          <View style={{ height: 80 }} /> 
+          <View style={{ height: 80 }} />
         </ScrollView>
 
         {/* Toolbar */}
-        <View style={[styles.toolbar, { 
-          backgroundColor: theme.colors.surface, 
+        <View style={[styles.toolbar, {
+          backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
+          paddingBottom: Platform.OS === 'ios' ? 20 : Math.max(insets.bottom, 14),
         }]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.toolbarScroll}>
             <TouchableOpacity style={styles.toolBtn} onPress={pickImages}>
@@ -338,8 +340,6 @@ const CreatePostScreen = ({ navigation }) => {
             <TouchableOpacity style={styles.toolBtn} onPress={() => setText(prev => prev + " #")}>
               <Ionicons name="pricetag-outline" size={24} color={theme.colors.textSecondary} />
             </TouchableOpacity>
-
-            <View style={styles.toolDivider} />
 
             <TouchableOpacity style={styles.toolBtn} onPress={toggleAnonymous}>
               <Ionicons name={isAnonymous ? "eye-off" : "eye-outline"} size={24} color={isAnonymous ? '#9C27B0' : theme.colors.textSecondary} />
@@ -366,18 +366,17 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 16,
   },
-  // ✅ NEW REEL BUTTON STYLES
   reelButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E1306C', // Instagram pink/red color
+    borderWidth: 1.5,
+    borderColor: '#1E88E5',
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 15,
-    gap: 5
+    gap: 4
   },
   reelButtonText: {
-    color: '#FFF',
     fontWeight: '600',
     fontSize: 12
   },
@@ -508,7 +507,7 @@ const styles = StyleSheet.create({
   toolbar: {
     paddingVertical: 12,
     borderTopWidth: 0.5,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 12, 
+    paddingBottom: 12,
   },
   toolbarScroll: {
     paddingHorizontal: 20,
@@ -518,12 +517,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginRight: 15,
   },
-  toolDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#ccc',
-    marginHorizontal: 10,
-  },
+
 });
 
 export default CreatePostScreen;

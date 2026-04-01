@@ -5,40 +5,39 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
   Platform,
-  FlatList,
   Animated,
   StatusBar,
   TouchableWithoutFeedback,
   Share,
 } from "react-native";
-import { Image } from "expo-image";
+import { FlashList } from "@shopify/flash-list";
+import { Image as ExpoImage } from "expo-image";
 import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useIsFocused } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSelector } from "react-redux";
 import api from "../services/api";
-import GifPickerModal from "../components/GifPickerModal";
-import { getTimeAgo } from "../utils/timeAgo";
+import ReelCommentsSheet from "../components/ReelCommentsSheet";
 
 
-const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => (
-  <TouchableOpacity
-    onPress={onPress}
-    style={styles.actionButton}
-    activeOpacity={0.7}
-  >
-    <Animated.View style={scale ? { transform: [{ scale }] } : {}}>
-      <Ionicons name={icon} size={32} color={color} style={styles.shadow} />
-    </Animated.View>
-    {label && <Text style={styles.actionText}>{label}</Text>}
-  </TouchableOpacity>
-);
+const ActionButton = ({ icon, label, color = "#fff", onPress, scale }) => {
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={styles.actionButton}
+      activeOpacity={0.7}
+    >
+      <Animated.View style={scale ? { transform: [{ scale }] } : {}}>
+        <Ionicons name={icon} size={28} color={color} />
+      </Animated.View>
+      {label && <Text style={styles.actionText}>{label}</Text>}
+    </TouchableOpacity>
+  );
+};
 
 
 // --- SINGLE REEL ITEM ---
@@ -49,10 +48,13 @@ const ReelItem = React.memo(
     isActive,
     shouldPlay,
     viewHeight,
+    currentUserId,
+    navigation,
     onLike,
     onComment,
     onShare,
     onFollow,
+    onSave,
   }) => {
     const insets = useSafeAreaInsets();
 
@@ -61,16 +63,15 @@ const ReelItem = React.memo(
     const doubleTapOpacity = useRef(new Animated.Value(0)).current;
     const playIconOpacity = useRef(new Animated.Value(0)).current;
 
-    // Local State
-    const [isLiked, setIsLiked] = useState(
-      item.isLiked || (item.likes && item.likes.includes(item.currentUserId)),
-    );
-    const [likesCount, setLikesCount] = useState(item.likes?.length || 0);
+    // Local State - Use API fields directly
+    const [isLiked, setIsLiked] = useState(item.isLiked || false);
+    const [likesCount, setLikesCount] = useState(item.likesCount || 0);
     const [isFollowing, setIsFollowing] = useState(
       item.user?.isFollowing || false,
     );
     const [isMuted, setIsMuted] = useState(false);
     const [userPaused, setUserPaused] = useState(false);
+    const [isSaved, setIsSaved] = useState(item.isSaved || false);
 
     const lastTap = useRef(null);
     const author = item.author || item.user || {};
@@ -93,6 +94,12 @@ const ReelItem = React.memo(
     useEffect(() => {
       player.muted = isMuted;
     }, [isMuted, player]);
+
+    // Sync local state when props change (e.g., after API call updates parent)
+    useEffect(() => {
+      setIsLiked(item.isLiked || false);
+      setLikesCount(item.likesCount || 0);
+    }, [item.isLiked, item.likesCount]);
 
     // Animations
     const animateHeart = () => {
@@ -136,12 +143,20 @@ const ReelItem = React.memo(
     };
 
     // Handlers
+    const singleTapTimeout = useRef(null);
+
     const handleSingleTap = () => {
       const now = Date.now();
       const DOUBLE_PRESS_DELAY = 300;
 
       if (lastTap.current && now - lastTap.current < DOUBLE_PRESS_DELAY) {
-        // Double Tap
+        // Double Tap detected - cancel pending single tap and trigger like
+        if (singleTapTimeout.current) {
+          clearTimeout(singleTapTimeout.current);
+          singleTapTimeout.current = null;
+        }
+
+        // Only like if not already liked
         if (!isLiked) {
           setIsLiked(true);
           setLikesCount((prev) => prev + 1);
@@ -149,19 +164,25 @@ const ReelItem = React.memo(
         }
         animateHeart();
         animateDoubleTap();
+        lastTap.current = null; // Reset to prevent triple tap issues
       } else {
-        // Single Tap
-        if (player.playing) {
-          player.pause();
-          setUserPaused(true);
-          togglePlayPauseAnimation();
-        } else {
-          player.play();
-          setUserPaused(false);
-          togglePlayPauseAnimation();
-        }
+        // First tap - wait to see if second tap comes
+        lastTap.current = now;
+
+        // Schedule single tap action (pause/play) after delay
+        singleTapTimeout.current = setTimeout(() => {
+          if (player.playing) {
+            player.pause();
+            setUserPaused(true);
+            togglePlayPauseAnimation();
+          } else {
+            player.play();
+            setUserPaused(false);
+            togglePlayPauseAnimation();
+          }
+          singleTapTimeout.current = null;
+        }, DOUBLE_PRESS_DELAY);
       }
-      lastTap.current = now;
     };
 
     const handleLikePress = () => {
@@ -175,7 +196,7 @@ const ReelItem = React.memo(
     const formatNumber = (num) => {
       if (num >= 1000000) return (num / 1000000).toFixed(1) + "M";
       if (num >= 1000) return (num / 1000).toFixed(1) + "K";
-      return num;
+      return String(num);
     };
 
     return (
@@ -236,17 +257,22 @@ const ReelItem = React.memo(
               {/* Bottom Left Info */}
               <View style={styles.infoContainer}>
                 <View style={styles.userRow}>
-                  <Image
-                    source={{ uri: author.avatar || 'https://via.placeholder.com/150' }}
-                    style={styles.avatar}
-                    contentFit="cover"
-                  />
+                  <TouchableOpacity
+                    onPress={() => navigation.navigate('UserProfile', { username: author.username, userId: author._id })}
+                    activeOpacity={0.7}
+                  >
+                    <ExpoImage
+                      source={{ uri: author.avatar || 'https://via.placeholder.com/150' }}
+                      style={styles.avatar}
+                      contentFit="cover"
+                    />
+                  </TouchableOpacity>
                   <Text style={styles.username}>@{author.username}</Text>
-                  {!isFollowing && (
+                  {!isFollowing && author._id !== currentUserId && (
                     <TouchableOpacity
                       onPress={() => {
                         setIsFollowing(true);
-                        onFollow(author._id);
+                        onFollow(author.username);
                       }}
                       style={styles.followBtn}
                     >
@@ -257,7 +283,11 @@ const ReelItem = React.memo(
 
                 <Text style={styles.caption} numberOfLines={2}>
                   {item.caption}{" "}
-                  <Text style={styles.hashtag}>#viral #trending</Text>
+                  {item.hashtags?.length > 0 && (
+                    <Text style={styles.hashtag}>
+                      {item.hashtags.map(t => `#${t}`).join(' ')}
+                    </Text>
+                  )}
                 </Text>
 
                 {item.music && (
@@ -295,12 +325,22 @@ const ReelItem = React.memo(
                 />
 
                 <ActionButton
+                  icon={isSaved ? "bookmark" : "bookmark-outline"}
+                  color={isSaved ? "#FFD700" : "#fff"}
+                  label={isSaved ? "Saved" : "Save"}
+                  onPress={() => {
+                    setIsSaved(!isSaved);
+                    onSave(item._id);
+                  }}
+                />
+
+                <ActionButton
                   icon={isMuted ? "volume-mute-outline" : "volume-high-outline"}
                   onPress={() => setIsMuted(!isMuted)}
                 />
 
                 <View style={styles.vinylContainer}>
-                  <Image
+                  <ExpoImage
                     source={{ uri: author.avatar || 'https://via.placeholder.com/150' }}
                     style={styles.vinyl}
                   />
@@ -318,6 +358,8 @@ const ReelItem = React.memo(
       prev.shouldPlay === next.shouldPlay &&
       prev.item._id === next.item._id &&
       prev.item.commentsCount === next.item.commentsCount &&
+      prev.item.isLiked === next.item.isLiked &&
+      prev.item.likesCount === next.item.likesCount &&
       prev.viewHeight === next.viewHeight
     );
   },
@@ -327,16 +369,14 @@ const ReelItem = React.memo(
 // --- MAIN SCREEN ---
 
 const ReelsScreen = ({ navigation }) => {
-  console.log('🎬 [ReelsScreen] Component mounting...');
-
   const insets = useSafeAreaInsets();
+  const { user } = useSelector((state) => state.auth);
 
-  // ⚠️ Safe wrapper - useBottomTabBarHeight crashes if not in tab navigator
+  // Safe wrapper - useBottomTabBarHeight crashes if not in tab navigator
   let bottomTabHeight = 0;
   try {
     bottomTabHeight = useBottomTabBarHeight();
   } catch (e) {
-    console.warn('⚠️ [ReelsScreen] useBottomTabBarHeight failed:', e.message);
     bottomTabHeight = 60; // fallback
   }
 
@@ -351,41 +391,18 @@ const ReelsScreen = ({ navigation }) => {
   // DYNAMIC HEIGHT STATE
   const [containerHeight, setContainerHeight] = useState(null);
 
-  // Modal State
+  // Comment Sheet State
   const [showComments, setShowComments] = useState(false);
   const [activeReel, setActiveReel] = useState(null);
-  const [comments, setComments] = useState([]);
-  const [commentText, setCommentText] = useState("");
-  const [loadingComments, setLoadingComments] = useState(false);
-  const [showGifPicker, setShowGifPicker] = useState(false);
 
   // API
   const fetchReels = async () => {
-    console.log('🎬 [ReelsScreen] Starting fetchReels...');
     try {
       const res = await api.get("/reels/feed");
-      console.log('🎬 [ReelsScreen] API Response:', {
-        status: res.status,
-        hasData: !!res.data,
-        dataType: typeof res.data,
-        isArray: Array.isArray(res.data),
-        dataLength: res.data?.data?.length || res.data?.length || 0,
-        rawResponse: JSON.stringify(res.data).slice(0, 500)
-      });
       const data = res.data?.data || (Array.isArray(res.data) ? res.data : []);
-      console.log('🎬 [ReelsScreen] Processed reels count:', data.length);
-      if (data.length > 0) {
-        console.log('🎬 [ReelsScreen] First reel:', {
-          id: data[0]._id,
-          hasVideoUrl: !!data[0].videoUrl,
-          videoUrl: data[0].videoUrl?.slice(0, 100),
-          hasUser: !!data[0].user
-        });
-      }
       setReels(data);
     } catch (e) {
-      console.error("❌ [ReelsScreen] Error fetching reels:", e.message);
-      console.error("❌ [ReelsScreen] Full error:", e.response?.data || e);
+      console.error("Error fetching reels:", e.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -404,15 +421,32 @@ const ReelsScreen = ({ navigation }) => {
   // Action Handlers
   const handleLike = useCallback(async (id) => {
     try {
-      await api.post(`/reels/${id}/like`);
+      const res = await api.post(`/reels/${id}/like`);
+      if (res.data?.success) {
+        setReels((prev) =>
+          prev.map((r) =>
+            r._id === id
+              ? { ...r, isLiked: res.data.data.isLiked, likesCount: res.data.data.likesCount }
+              : r
+          )
+        );
+      }
     } catch (e) {
       console.error(e);
     }
   }, []);
 
-  const handleFollow = useCallback(async (id) => {
+  const handleFollow = useCallback(async (username) => {
     try {
-      await api.post(`/users/${id}/follow`);
+      await api.post(`/users/${username}/follow`);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  const handleSave = useCallback(async (id) => {
+    try {
+      await api.post('/bookmarks', { itemId: id, itemType: 'reel' });
     } catch (e) {
       console.error(e);
     }
@@ -426,61 +460,22 @@ const ReelsScreen = ({ navigation }) => {
     }
   }, []);
 
-  const openComments = useCallback(async (reel) => {
+  const openComments = useCallback((reel) => {
     setActiveReel(reel);
     setShowComments(true);
-    setLoadingComments(true);
-    try {
-      const res = await api.get(`/reels/${reel._id}/comments`);
-      setComments(res.data.data || []);
-    } catch (e) {
-      console.error(e);
-      setComments([]);
-    } finally {
-      setLoadingComments(false);
-    }
   }, []);
 
-  const postComment = async () => {
-    if (!commentText.trim()) return;
-    try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, {
-        content: commentText,
-        type: 'text',
-      });
-      setComments([res.data.data, ...comments]);
-      setCommentText("");
+  const handleCommentCountChange = useCallback((newCount) => {
+    if (activeReel) {
       setReels((prev) =>
         prev.map((r) =>
           r._id === activeReel._id
-            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
+            ? { ...r, commentsCount: newCount }
             : r,
         ),
       );
-    } catch (e) {
-      console.error(e);
     }
-  };
-
-  const handleGifSelect = async (gif) => {
-    setShowGifPicker(false);
-    try {
-      const res = await api.post(`/reels/${activeReel._id}/comments`, {
-        content: gif.url,
-        type: "gif",
-      });
-      setComments([res.data.data, ...comments]);
-      setReels((prev) =>
-        prev.map((r) =>
-          r._id === activeReel._id
-            ? { ...r, commentsCount: (r.commentsCount || 0) + 1 }
-            : r,
-        ),
-      );
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  }, [activeReel]);
 
   // View Config
   const onViewableItemsChanged = useRef(({ viewableItems }) => {
@@ -499,10 +494,13 @@ const ReelsScreen = ({ navigation }) => {
         isActive={index === activeIndex}
         shouldPlay={isFocused}
         viewHeight={containerHeight}
+        currentUserId={user?._id || user?.id}
+        navigation={navigation}
         onLike={handleLike}
         onComment={openComments}
         onShare={handleShare}
         onFollow={handleFollow}
+        onSave={handleSave}
       />
     ),
     [
@@ -516,34 +514,7 @@ const ReelsScreen = ({ navigation }) => {
     ],
   );
 
-  // ✅ RENDER COMMENT ITEM WITH TIME AGO
-  const renderCommentItem = useCallback(({ item }) => (
-    <View style={styles.commentRow}>
-      <Image
-        source={{ uri: item.author?.avatar || 'https://via.placeholder.com/150' }}
-        style={styles.commentAvatar}
-      />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.commentUser}>
-          @{item.author?.username}
-          <Text style={styles.commentTime}> • {getTimeAgo(item.createdAt)}</Text>
-        </Text>
-        {item.type === "gif" || (item.content && item.content.includes(".gif")) ? (
-          <Image
-            source={{ uri: item.content }}
-            style={{
-              width: 100,
-              height: 100,
-              borderRadius: 8,
-              marginTop: 4,
-            }}
-          />
-        ) : (
-          <Text style={styles.commentBody}>{item.content}</Text>
-        )}
-      </View>
-    </View>
-  ), []);
+
 
   if (loading && reels.length === 0) {
     return (
@@ -574,115 +545,31 @@ const ReelsScreen = ({ navigation }) => {
 
       {/* Reels List */}
       {containerHeight > 0 && (
-        <FlatList
+        <FlashList
           data={reels}
           renderItem={renderItem}
           keyExtractor={(item) => item._id}
+          estimatedItemSize={containerHeight}
           pagingEnabled
           decelerationRate="fast"
           disableIntervalMomentum
           showsVerticalScrollIndicator={false}
-          getItemLayout={(data, index) => ({
-            length: containerHeight,
-            offset: containerHeight * index,
-            index,
-          })}
           snapToInterval={containerHeight}
           snapToAlignment="start"
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={viewabilityConfig}
-          initialNumToRender={1}
-          maxToRenderPerBatch={2}
-          windowSize={3}
-          removeClippedSubviews={Platform.OS === "android"}
           refreshing={refreshing}
           onRefresh={handleRefresh}
         />
       )}
 
-      {/* Comments Modal */}
-      <Modal
+      {/* Instagram-style Comments Sheet */}
+      <ReelCommentsSheet
         visible={showComments}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowComments(false)}
-      >
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalKeyView}
-        >
-          <TouchableOpacity
-            style={styles.modalBackdrop}
-            onPress={() => setShowComments(false)}
-            activeOpacity={1}
-          />
-          <View
-            style={[
-              styles.modalContent,
-              { height: containerHeight ? containerHeight * 0.7 : 500 },
-            ]}
-          >
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Comments</Text>
-              <TouchableOpacity onPress={() => setShowComments(false)}>
-                <Ionicons name="close" size={24} color="#000" />
-              </TouchableOpacity>
-            </View>
-
-            {loadingComments ? (
-              <ActivityIndicator style={{ marginTop: 20 }} color="#FF3B5C" />
-            ) : (
-              <FlatList
-                data={comments}
-                keyExtractor={(i) => i._id}
-                renderItem={renderCommentItem}
-                ListEmptyComponent={
-                  <Text style={styles.emptyText}>
-                    No comments yet. Say something!
-                  </Text>
-                }
-              />
-            )}
-
-            <View
-              style={[
-                styles.inputContainer,
-                { paddingBottom: insets.bottom + 10 },
-              ]}
-            >
-              <TouchableOpacity onPress={() => setShowGifPicker(true)}>
-                <Ionicons name="images-outline" size={28} color="#555" />
-              </TouchableOpacity>
-              <TextInput
-                placeholder="Add a comment..."
-                style={styles.input}
-                value={commentText}
-                onChangeText={setCommentText}
-                placeholderTextColor="#999"
-              />
-              <TouchableOpacity
-                onPress={postComment}
-                disabled={!commentText.trim()}
-              >
-                <Text
-                  style={{
-                    color: commentText.trim() ? "#FF3B5C" : "#ccc",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Post
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
-
-      {/* GIF Picker Modal */}
-      <GifPickerModal
-        visible={showGifPicker}
-        onClose={() => setShowGifPicker(false)}
-        onSelectGif={handleGifSelect}
+        reel={activeReel}
+        currentUserId={user?._id || user?.id || null}
+        onClose={() => setShowComments(false)}
+        onCommentCountChange={handleCommentCountChange}
       />
     </View>
   );
@@ -755,7 +642,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   infoContainer: { flex: 1, paddingRight: 10, marginBottom: 10 },
-  actionsContainer: { width: 50, alignItems: "center", marginBottom: 20 },
+  actionsContainer: { width: 44, alignItems: "center", marginBottom: 14 },
 
   // User Info
   userRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
@@ -797,86 +684,27 @@ const styles = StyleSheet.create({
   musicText: { color: "white", marginLeft: 8, fontSize: 14 },
 
   // Actions
-  actionButton: { alignItems: "center", marginBottom: 22 },
-  shadow: {
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-  },
+  actionButton: { alignItems: "center", marginBottom: 18 },
   actionText: {
     color: "white",
     fontSize: 12,
     fontWeight: "600",
-    marginTop: 4,
-    textShadowColor: "rgba(0,0,0,0.5)",
-    textShadowRadius: 3,
+    marginTop: 3,
   },
   vinylContainer: {
-    marginTop: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    marginTop: 6,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: "#222",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#333",
+    borderWidth: 1.5,
+    borderColor: "#444",
   },
-  vinyl: { width: 26, height: 26, borderRadius: 13 },
+  vinyl: { width: 22, height: 22, borderRadius: 11 },
 
-  // Modal
-  modalKeyView: { flex: 1, justifyContent: "flex-end" },
-  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
-  modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    overflow: "hidden",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderColor: "#eee",
-  },
-  modalTitle: { fontWeight: "bold", fontSize: 16 },
-  commentRow: { flexDirection: "row", padding: 16 },
-  commentAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: 12,
-    backgroundColor: "#eee",
-  },
-  commentUser: {
-    fontWeight: "bold",
-    fontSize: 13,
-    color: "#333",
-    marginBottom: 2,
-  },
-  commentTime: { fontWeight: "400", color: "#999" },
-  commentBody: { fontSize: 14, color: "#111", lineHeight: 18 },
-  emptyText: { textAlign: "center", marginTop: 40, color: "#999" },
-  inputContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderTopWidth: 1,
-    borderColor: "#eee",
-    backgroundColor: "white",
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#f1f1f1",
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginHorizontal: 10,
-    fontSize: 15,
-  },
+
 });
 
 export default ReelsScreen;

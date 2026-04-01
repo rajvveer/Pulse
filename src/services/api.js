@@ -1,14 +1,29 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import socketService from './socket';
 
-const API_URL = 'http://192.168.1.4:3000/api/v1';
+// ============================================================
+// API CONFIGURATION
+// ============================================================
+// Primary: Railway backend (production)
+// Fallback: Your Vercel proxy (deploy pulse-proxy folder to Vercel)
+// const LOCAL_URL = 'http://192.168.1.5:3000/api/v1'; // For local WiFi testing only
+const PRIMARY_URL = 'https://pulsebackendd-production-1d87.up.railway.app/api/v1';
+
+// TODO: After deploying proxy, update this URL:
+// const PROXY_URL = 'https://pulse-api-proxy.vercel.app/api/v1';
+
+let API_URL = PRIMARY_URL;
+
+console.log('🌐 [API] Using URL:', API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  // Increased timeout for mobile data (60 seconds)
+  timeout: 60000,
 });
 
 // --- CONCURRENCY HANDLERS ---
@@ -27,26 +42,65 @@ const processQueue = (error, token = null) => {
 };
 
 // ============================================================
-// 1️⃣ REQUEST INTERCEPTOR (Attach Token)
+// 🔄 NETWORK RETRY LOGIC (For Mobile Data Reliability)
+// ============================================================
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000;
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const isNetworkError = (error) => {
+  return (
+    !error.response &&
+    (error.code === 'ECONNABORTED' ||
+      error.code === 'ERR_NETWORK' ||
+      error.message?.includes('timeout') ||
+      error.message?.includes('Network Error'))
+  );
+};
+
+// ============================================================
+// 1️⃣ REQUEST INTERCEPTOR (Attach Token + Retry Count)
 // ============================================================
 api.interceptors.request.use(
   async (config) => {
+    console.log('📤 [API] Request:', config.method?.toUpperCase(), config.url);
     const token = await AsyncStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    config._retryCount = config._retryCount || 0;
     return config;
   },
   (error) => Promise.reject(error)
 );
 
 // ============================================================
-// 2️⃣ RESPONSE INTERCEPTOR (Handle 401 & Refresh)
+// 2️⃣ RESPONSE INTERCEPTOR (Network Retry + 401 Refresh)
 // ============================================================
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log('📥 [API] Response:', response.status, response.config.url);
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+
+    // 🔄 NETWORK ERROR RETRY LOGIC
+    if (isNetworkError(error) && originalRequest._retryCount < MAX_RETRIES) {
+      originalRequest._retryCount += 1;
+      console.log(`🔄 [API] Network error, retry ${originalRequest._retryCount}/${MAX_RETRIES}...`);
+
+      const delay = RETRY_DELAY * Math.pow(2, originalRequest._retryCount - 1);
+      console.log(`⏳ [API] Waiting ${delay}ms...`);
+      await sleep(delay);
+
+      return api(originalRequest);
+    }
+
+    if (isNetworkError(error)) {
+      console.error('❌ [API] All retries failed:', error.message);
+    }
 
     // IF 401 Unauthorized AND NOT ALREADY RETRIED
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -78,28 +132,23 @@ api.interceptors.response.use(
 
         console.log('🔄 [API] Calling /auth/refresh-token...');
 
-        // Call backend (Use axios.post to avoid circular loop)
         const response = await axios.post(`${API_URL}/auth/refresh-token`, {
           refreshToken,
         });
 
-        // 🔍 DEBUG: Log the exact structure backend sent
         console.log('📩 [API] Refresh Response Payload:', JSON.stringify(response.data, null, 2));
 
-        // ✅ HANDLE YOUR BACKEND STRUCTURE
-        // Pattern: { success: true, tokens: { accessToken: "...", refreshToken: "..." } }
         const dataSource = response.data.data || response.data;
 
         const accessToken =
-          dataSource.tokens?.accessToken || // Nested in tokens object (Your Backend)
-          dataSource.accessToken ||         // Flat
-          dataSource.token;                 // Alternative
+          dataSource.tokens?.accessToken ||
+          dataSource.accessToken ||
+          dataSource.token;
 
         const newRefreshToken =
           dataSource.tokens?.refreshToken ||
           dataSource.refreshToken;
 
-        // Logging success
         if (accessToken) {
           console.log('✅ [API] NEW Access Token received!');
         } else {
@@ -113,25 +162,25 @@ api.interceptors.response.use(
           console.log('ℹ️ [API] No new Refresh Token sent (Reusing old one).');
         }
 
-        // Save new tokens
         await AsyncStorage.setItem('accessToken', accessToken);
         if (newRefreshToken) {
           await AsyncStorage.setItem('refreshToken', newRefreshToken);
         }
 
-        // Process Queue
         processQueue(null, accessToken);
 
-        // Retry Original Request
         console.log('🚀 [API] Retrying original failed request...');
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+
+        // ✅ Also update socket token so it doesn't get auth errors
+        socketService.updateToken(accessToken);
+
         return api(originalRequest);
 
       } catch (refreshError) {
         processQueue(refreshError, null);
         console.error('💀 [API] Session expired completely:', refreshError.message);
 
-        // Force logout to clean up bad state
         await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
 
         return Promise.reject(refreshError);

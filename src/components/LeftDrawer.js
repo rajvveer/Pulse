@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -8,6 +8,7 @@ import {
     TouchableOpacity,
     TouchableWithoutFeedback,
     ScrollView,
+    PanResponder,
     Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,6 +19,8 @@ import { getTheme } from '../styles/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
+const SWIPE_THRESHOLD = DRAWER_WIDTH * 0.3;
+const VELOCITY_THRESHOLD = 0.5;
 
 const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
     const insets = useSafeAreaInsets();
@@ -28,28 +31,78 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
     const translateX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
     const overlayOpacity = useRef(new Animated.Value(0)).current;
 
+    // Swipe-to-close gesture
+    const panResponder = useMemo(() =>
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => false,
+            onMoveShouldSetPanResponder: (_, gestureState) => {
+                // Only respond to leftward swipes on the drawer
+                return gestureState.dx < -10 && Math.abs(gestureState.dy) < Math.abs(gestureState.dx);
+            },
+            onPanResponderMove: (_, gestureState) => {
+                // Clamp between -DRAWER_WIDTH and 0
+                const newX = Math.min(0, Math.max(-DRAWER_WIDTH, gestureState.dx));
+                translateX.setValue(newX);
+                // Sync overlay opacity
+                const progress = 1 + (newX / DRAWER_WIDTH);
+                overlayOpacity.setValue(Math.max(0, progress));
+            },
+            onPanResponderRelease: (_, gestureState) => {
+                // If swiped far enough or fast enough, close
+                if (gestureState.dx < -SWIPE_THRESHOLD || gestureState.vx < -VELOCITY_THRESHOLD) {
+                    closeDrawer();
+                } else {
+                    // Snap back open
+                    openDrawer();
+                }
+            },
+        }),
+        []);
+
+    const openDrawer = () => {
+        Animated.parallel([
+            Animated.spring(translateX, {
+                toValue: 0,
+                useNativeDriver: true,
+                tension: 50,
+                friction: 10,
+            }),
+            Animated.timing(overlayOpacity, {
+                toValue: 1,
+                duration: 250,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    };
+
+    const closeDrawer = () => {
+        Animated.parallel([
+            Animated.spring(translateX, {
+                toValue: -DRAWER_WIDTH,
+                useNativeDriver: true,
+                tension: 50,
+                friction: 10,
+            }),
+            Animated.timing(overlayOpacity, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: true,
+            }),
+        ]).start(() => {
+            onClose();
+        });
+    };
+
     useEffect(() => {
         if (isOpen) {
-            Animated.parallel([
-                Animated.spring(translateX, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    tension: 65,
-                    friction: 11,
-                }),
-                Animated.timing(overlayOpacity, {
-                    toValue: 1,
-                    duration: 200,
-                    useNativeDriver: true,
-                }),
-            ]).start();
+            openDrawer();
         } else {
             Animated.parallel([
                 Animated.spring(translateX, {
                     toValue: -DRAWER_WIDTH,
                     useNativeDriver: true,
-                    tension: 65,
-                    friction: 11,
+                    tension: 50,
+                    friction: 10,
                 }),
                 Animated.timing(overlayOpacity, {
                     toValue: 0,
@@ -61,53 +114,61 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
     }, [isOpen]);
 
     const vibes = [
-        { id: 'auto', emoji: '🔮', label: 'Auto Detect' },
-        { id: 'chill', emoji: '😌', label: 'Chill' },
-        { id: 'hype', emoji: '🔥', label: 'Hype' },
-        { id: 'sad', emoji: '😢', label: 'In My Feels' },
-        { id: 'funny', emoji: '😂', label: 'Comedy' },
-        { id: 'creative', emoji: '✨', label: 'Creative' },
+        { id: 'auto', icon: 'color-wand-outline', label: 'Auto Detect' },
+        { id: 'chill', icon: 'leaf-outline', label: 'Chill' },
+        { id: 'hype', icon: 'flame-outline', label: 'Hype' },
+        { id: 'sad', icon: 'heart-outline', label: 'In My Feels' },
+        { id: 'funny', icon: 'happy-outline', label: 'Comedy' },
+        { id: 'creative', icon: 'sparkles-outline', label: 'Creative' },
     ];
 
     const menuItems = [
         {
+            id: 'profile',
+            icon: 'person-circle-outline',
+            label: 'Profile',
+            screen: 'Profile',
+        },
+        {
             id: 'pulsedrops',
-            icon: 'flash',
+            icon: 'flash-outline',
             label: 'Pulse Drops',
-            sublabel: 'Trending moments',
-            color: '#FF6B6B',
             screen: 'PulseDrops',
         },
         {
-            id: 'whisper',
-            icon: 'eye-off',
-            label: 'Whisper Mode',
-            sublabel: 'Anonymous local',
-            color: '#9C27B0',
-            screen: 'Whisper',
-        },
-        {
             id: 'chains',
-            icon: 'git-branch',
+            icon: 'git-branch-outline',
             label: 'Chain Reactions',
-            sublabel: 'Collab stories',
-            color: '#00BCD4',
             screen: 'Chains',
         },
         {
             id: 'alterego',
-            icon: 'sparkles',
+            icon: 'sparkles-outline',
             label: 'AI Alter Ego',
-            sublabel: 'Your AI twin',
-            color: '#4CAF50',
             screen: 'AlterEgo',
+        },
+        {
+            id: 'roulette',
+            icon: 'dice-outline',
+            label: 'Roulette',
+            screen: 'Roulette',
+        },
+        {
+            id: 'bookmarks',
+            icon: 'bookmark-outline',
+            label: 'Bookmarks',
+            screen: 'Bookmarks',
         },
     ];
 
     const handleNavigate = (screen) => {
         onClose();
         setTimeout(() => {
-            navigation.navigate(screen);
+            if (screen === 'Profile') {
+                navigation.navigate('Main', { screen: 'Profile', params: { screen: 'ProfileMain' } });
+            } else {
+                navigation.navigate(screen);
+            }
         }, 300);
     };
 
@@ -116,7 +177,7 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
     return (
         <View style={[StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]} pointerEvents="box-none">
             {/* Overlay */}
-            <TouchableWithoutFeedback onPress={onClose}>
+            <TouchableWithoutFeedback onPress={closeDrawer}>
                 <Animated.View
                     style={[
                         styles.overlay,
@@ -125,8 +186,9 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
                 />
             </TouchableWithoutFeedback>
 
-            {/* Drawer */}
+            {/* Drawer with swipe gesture */}
             <Animated.View
+                {...panResponder.panHandlers}
                 style={[
                     styles.drawer,
                     {
@@ -142,9 +204,9 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
                     {/* Header */}
                     <View style={styles.header}>
                         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>
-                            ✨ Pulse Features
+                            Pulse
                         </Text>
-                        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                        <TouchableOpacity onPress={closeDrawer} style={styles.closeBtn}>
                             <Ionicons name="close" size={24} color={theme.colors.textSecondary} />
                         </TouchableOpacity>
                     </View>
@@ -152,7 +214,7 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
                     {/* Vibe Check Section */}
                     <View style={styles.section}>
                         <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>
-                            🎭 VIBE CHECK
+                            VIBE CHECK
                         </Text>
                         <Text style={[styles.sectionSubtitle, { color: theme.colors.textSecondary }]}>
                             Feed adapts to your mood
@@ -174,7 +236,7 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
                                     ]}
                                     onPress={() => onVibeChange?.(vibe.id)}
                                 >
-                                    <Text style={styles.vibeEmoji}>{vibe.emoji}</Text>
+                                    <Ionicons name={vibe.icon} size={16} color={currentVibe === vibe.id ? theme.colors.primary : theme.colors.textSecondary} />
                                     <Text
                                         style={[
                                             styles.vibeLabel,
@@ -199,7 +261,7 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
                     {/* Feature Menu */}
                     <View style={styles.section}>
                         <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>
-                            🚀 FEATURES
+                            FEATURES
                         </Text>
                         {menuItems.map((item) => (
                             <TouchableOpacity
@@ -299,9 +361,7 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
         gap: 6,
     },
-    vibeEmoji: {
-        fontSize: 16,
-    },
+
     vibeLabel: {
         fontSize: 13,
         fontWeight: '600',
