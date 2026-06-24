@@ -24,6 +24,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
 import PostDetailCard from '../components/PostDetailCard';
 import GifPickerModal from '../components/GifPickerModal';
+import { useBookmark } from '../utils/bookmarkStore';
 import api from '../services/api';
 import { useSelector } from 'react-redux';
 
@@ -201,7 +202,7 @@ const PostDetailScreen = ({ route, navigation }) => {
   const [comments, setComments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [isBookmarked, setIsBookmarked] = useState(false);
+  const [isBookmarked, toggleBookmark] = useBookmark(postId, post?.isBookmarked);
 
   const [commentText, setCommentText] = useState('');
   const [selectedGif, setSelectedGif] = useState(null);
@@ -247,7 +248,6 @@ const PostDetailScreen = ({ route, navigation }) => {
           fetchedPost.author.displayName = fetchedPost.author.profile.displayName || fetchedPost.author.username;
         }
         setPost(fetchedPost);
-        setIsBookmarked(fetchedPost.isBookmarked || false);
       }
 
       if (commentRes.data.success) {
@@ -282,12 +282,7 @@ const PostDetailScreen = ({ route, navigation }) => {
     } catch (error) { console.error(error); }
   };
 
-  const handleBookmark = async () => {
-    try {
-      setIsBookmarked(!isBookmarked);
-      await api.post('/bookmarks', { itemId: postId, itemType: 'post' });
-    } catch (error) { console.error(error); }
-  };
+  const handleBookmark = () => { toggleBookmark(); };
 
   const handleShare = async () => {
     try {
@@ -311,34 +306,71 @@ const PostDetailScreen = ({ route, navigation }) => {
   const handleSubmitComment = async () => {
     if ((!commentText.trim() && !selectedGif) || isSubmitting) return;
 
-    setIsSubmitting(true);
-    try {
-      const payload = {
-        content: commentText.trim(),
-        gif: selectedGif,
-        parentCommentId: replyingTo?._id || null,
-      };
+    const payload = {
+      content: commentText.trim(),
+      gif: selectedGif,
+      parentCommentId: replyingTo?._id || null,
+    };
+    const parentId = replyingTo?._id || null;
 
+    // Optimistic: clear the input immediately so the UI feels instant, then
+    // insert the server's populated comment into local state — no full refetch.
+    setIsSubmitting(true);
+    setCommentText('');
+    setSelectedGif(null);
+    setReplyingTo(null);
+    Keyboard.dismiss();
+
+    try {
       const response = await api.post(`/posts/${postId}/comments`, payload);
 
       if (response.data.success) {
-        await fetchData(true); // Ideally optimistically update here instead of refetch
-        setCommentText('');
-        setSelectedGif(null);
-        setReplyingTo(null);
-        Keyboard.dismiss();
+        const newComment = response.data.data;
 
-        // Scroll to top or bottom depending on sort
-        setTimeout(() => {
-          flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-        }, 500);
+        if (parentId) {
+          // Reply: append under its parent and make sure the thread is expanded.
+          setComments(prev => addReplyToComment(prev, parentId, newComment));
+          setExpandedComments(prev => new Set(prev).add(parentId));
+        } else {
+          // Top-level: prepend for 'recent' sort, append otherwise.
+          setComments(prev =>
+            sortBy === 'recent' ? [newComment, ...prev] : [...prev, newComment]
+          );
+          if (sortBy === 'recent') {
+            setTimeout(() => {
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+            }, 100);
+          }
+        }
+
+        // Bump the post's comment count locally.
+        setPost(prev =>
+          prev
+            ? { ...prev, stats: { ...prev.stats, comments: (prev.stats?.comments || 0) + 1 } }
+            : prev
+        );
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to post comment');
+      // Restore the draft so the user doesn't lose what they typed.
+      setCommentText(payload.content);
+      setSelectedGif(payload.gif);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  // Recursively insert a reply under the comment whose _id === parentId.
+  const addReplyToComment = (list, parentId, reply) =>
+    list.map(c => {
+      if (c._id === parentId) {
+        return { ...c, replies: [...(c.replies || []), reply] };
+      }
+      if (c.replies && c.replies.length > 0) {
+        return { ...c, replies: addReplyToComment(c.replies, parentId, reply) };
+      }
+      return c;
+    });
 
   const handleSelectGif = (gif) => {
     setSelectedGif(gif);

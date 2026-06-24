@@ -145,19 +145,8 @@ const MyPostsScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      
-      {/* Header */}
-      <View style={[styles.header, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Manage Content</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('Create')} style={styles.addBtn}>
-          <Ionicons name="add" size={28} color={theme.colors.primary} />
-        </TouchableOpacity>
-      </View>
 
       {/* Content */}
       {loading ? (

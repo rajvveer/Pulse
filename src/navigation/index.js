@@ -23,6 +23,9 @@ import ChatListScreen from "../screens/Chat/ChatListScreen";
 import ChatScreen from "../screens/Chat/ChatScreen";
 import ReelsScreen from "../screens/ReelsScreen";
 import CreateReelScreen from "../screens/CreateReelScreen";
+import CreateSnapScreen from "../screens/CreateSnapScreen";
+import SnapSendScreen from "../screens/SnapSendScreen";
+import SnapViewerScreen from "../screens/SnapViewerScreen";
 
 // Feature screens
 import WhisperScreen from "../screens/WhisperScreen";
@@ -33,6 +36,7 @@ import SearchScreen from "../screens/SearchScreen";
 import BookmarksScreen from "../screens/BookmarksScreen";
 import PushNotificationHandler from "../components/Notifications/PushNotificationHandler";
 import RouletteScreen from "../screens/RouletteScreen";
+import GroupInfoScreen from "../screens/GroupInfoScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -162,12 +166,18 @@ export const RootNavigator = () => {
               options={{ presentation: 'modal' }}
             />
 
+            {/* SNAP (ephemeral stories + direct disappearing snaps) */}
+            <Stack.Screen name="CreateSnap" component={CreateSnapScreen} options={{ presentation: 'modal' }} />
+            <Stack.Screen name="SnapSend" component={SnapSendScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="SnapViewer" component={SnapViewerScreen} options={{ presentation: 'modal', animationEnabled: true }} />
+
             {/* CORE SCREENS */}
             <Stack.Screen name="PostDetail" component={PostDetailScreen} options={{ presentation: "card" }} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} options={{ presentation: "card" }} />
             <Stack.Screen name="Connections" component={ConnectionsScreen} />
             <Stack.Screen name="EditPost" component={EditPostScreen} options={{ presentation: 'modal' }} />
             <Stack.Screen name="ChatScreen" component={ChatScreen} options={{ presentation: 'card' }} />
+            <Stack.Screen name="GroupInfoScreen" component={GroupInfoScreen} options={{ presentation: 'card' }} />
 
             {/* NEW FEATURE SCREENS */}
             <Stack.Screen name="PulseDrops" component={PulseDropsScreen} options={{ presentation: 'card' }} />

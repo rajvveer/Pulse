@@ -83,12 +83,14 @@ const postSlice = createSlice({
       // Update in both feeds
       const updatePost = (post) => {
         if (post._id === postId) {
+          if (!post.stats) post.stats = { likes: 0 };
+          const current = post.stats.likes || 0;
           if (post.isLiked) {
             post.isLiked = false;
-            post.stats.likes = Math.max(0, post.stats.likes - 1);
+            post.stats.likes = Math.max(0, current - 1);
           } else {
             post.isLiked = true;
-            post.stats.likes += 1;
+            post.stats.likes = current + 1;
           }
         }
       };

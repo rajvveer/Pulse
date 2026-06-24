@@ -9,7 +9,6 @@ import {
     Switch,
     ActivityIndicator,
     FlatList,
-    Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -17,18 +16,18 @@ import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
 import api from '../services/api';
 
-const { width } = Dimensions.get('window');
+const ACCENT = '#4CAF50';
 
 const PERSONALITIES = [
-    { id: 'friendly', emoji: '😊', label: 'Friendly', desc: 'Warm and approachable' },
-    { id: 'funny', emoji: '😂', label: 'Funny', desc: 'Witty and playful' },
-    { id: 'professional', emoji: '💼', label: 'Professional', desc: 'Formal and polished' },
-    { id: 'mysterious', emoji: '🔮', label: 'Mysterious', desc: 'Enigmatic and intriguing' },
-    { id: 'chill', emoji: '😎', label: 'Chill', desc: 'Relaxed and casual' },
+    { id: 'friendly', label: 'Friendly', desc: 'Warm and approachable' },
+    { id: 'funny', label: 'Funny', desc: 'Witty and playful' },
+    { id: 'professional', label: 'Professional', desc: 'Formal and polished' },
+    { id: 'mysterious', label: 'Mysterious', desc: 'Enigmatic and intriguing' },
+    { id: 'chill', label: 'Chill', desc: 'Relaxed and casual' },
 ];
 
 const TrainingCard = ({ title, placeholder, value, onChange, theme }) => (
-    <View style={[styles.trainingCard, { backgroundColor: theme.colors.surface }]}>
+    <View style={[styles.trainingCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
         <Text style={[styles.trainingTitle, { color: theme.colors.text }]}>{title}</Text>
         <TextInput
             style={[styles.trainingInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
@@ -48,23 +47,18 @@ const AlterEgoScreen = ({ navigation }) => {
     const [ego, setEgo] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
-    const [tab, setTab] = useState('settings'); // settings | activity | guessWho
+    const [tab, setTab] = useState('settings');
     const [activityLog, setActivityLog] = useState([]);
     const [aiStatus, setAiStatus] = useState(null);
-    const [guessState, setGuessState] = useState(null); // { message, showAnswer }
+    const [guessState, setGuessState] = useState(null);
     const [guessStats, setGuessStats] = useState(null);
     const [formData, setFormData] = useState({
         name: '',
         personality: 'friendly',
         isActive: false,
-        training: {
-            howAreYou: '',
-            humorStyle: '',
-            complimentResponse: '',
-        }
+        training: { howAreYou: '', humorStyle: '', complimentResponse: '' }
     });
 
-    // Fetch alter ego data
     const fetchEgo = useCallback(async () => {
         setIsLoading(true);
         try {
@@ -80,17 +74,11 @@ const AlterEgoScreen = ({ navigation }) => {
                     name: data.name || '',
                     personality: data.personality || 'friendly',
                     isActive: data.isActive || false,
-                    training: data.training || {
-                        howAreYou: '',
-                        humorStyle: '',
-                        complimentResponse: '',
-                    }
+                    training: data.training || { howAreYou: '', humorStyle: '', complimentResponse: '' }
                 });
                 setGuessStats(data.guessWhoStats || null);
             }
-            if (statusRes.data.success) {
-                setAiStatus(statusRes.data.data);
-            }
+            if (statusRes.data.success) setAiStatus(statusRes.data.data);
         } catch (error) {
             console.error('Fetch ego error:', error);
         } finally {
@@ -125,7 +113,7 @@ const AlterEgoScreen = ({ navigation }) => {
             if (trainResponse.data.success && trainResponse.data.data.trainingLevel !== undefined) {
                 setEgo(prev => ({ ...prev, trainingLevel: trainResponse.data.data.trainingLevel }));
                 if (trainResponse.data.data.trainingLevel >= 1) {
-                    alert('✅ Training saved! Your AI is now ready to activate.');
+                    alert('Training saved. Your AI is ready to activate.');
                 }
             }
         } catch (error) {
@@ -146,7 +134,7 @@ const AlterEgoScreen = ({ navigation }) => {
             console.error('Toggle error:', error);
             const errorMessage = error.response?.data?.message || 'Failed to toggle AI';
             if (errorMessage.includes('training')) {
-                alert('⚠️ Training Required!\n\nPlease fill in at least ONE training field below and tap Save before activating.');
+                alert('Training required. Fill in at least one training field below and tap Save before activating.');
             } else {
                 alert(errorMessage);
             }
@@ -159,17 +147,15 @@ const AlterEgoScreen = ({ navigation }) => {
                 message: 'Hey, how are you?'
             });
             if (response.data.success) {
-                alert(`🤖 AI Response:\n\n${response.data.data.response}`);
+                alert(`AI response:\n\n${response.data.data.response}`);
             }
         } catch (error) {
             console.error('Test error:', error);
         }
     };
 
-    // ===== GUESS WHO GAME =====
     const startGuessRound = async () => {
         try {
-            // Generate a response and ask the user to guess
             const response = await api.post('/alter-ego/generate', {
                 message: 'Hey what have you been up to lately?',
                 context: { type: 'guess_game' }
@@ -177,7 +163,7 @@ const AlterEgoScreen = ({ navigation }) => {
             if (response.data.success) {
                 setGuessState({
                     message: response.data.data.response,
-                    isAI: true, // This response IS from the AI
+                    isAI: true,
                     showAnswer: false
                 });
             }
@@ -189,7 +175,6 @@ const AlterEgoScreen = ({ navigation }) => {
     const submitGuess = async (guessedAI) => {
         const correct = guessedAI === guessState?.isAI;
         setGuessState(prev => ({ ...prev, showAnswer: true, correct }));
-
         try {
             const res = await api.post('/alter-ego/guess', { guessedCorrectly: correct });
             if (res.data.success) setGuessStats(res.data.data);
@@ -198,57 +183,56 @@ const AlterEgoScreen = ({ navigation }) => {
         }
     };
 
+    const providerLabel = (p) => {
+        if (p === 'gemini') return 'Gemini';
+        if (p === 'openai') return 'GPT';
+        return 'Template';
+    };
+
+    const subtle = isDark ? '#2A2A2C' : '#F2F2F5';
+
     if (isLoading) {
         return (
             <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#4CAF50" />
-                    <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
-                        Loading your AI twin...
-                    </Text>
+                    <ActivityIndicator size="large" color={ACCENT} />
+                    <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading…</Text>
                 </View>
             </SafeAreaView>
         );
     }
 
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
             {/* Header */}
-            <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color={theme.colors.text} />
+            <View style={[styles.header, { backgroundColor: theme.colors.background, borderBottomColor: theme.colors.border }]}>
+                <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} hitSlop={12}>
+                    <Ionicons name="chevron-back" size={26} color={theme.colors.text} />
                 </TouchableOpacity>
                 <View style={styles.headerCenter}>
-                    <Text style={[styles.headerTitle, { color: theme.colors.text }]}>🤖 AI Alter Ego</Text>
-                    <View style={styles.headerRow}>
-                        <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>Your AI twin</Text>
-                        {aiStatus && (
-                            <View style={[styles.aiBadge, {
-                                backgroundColor: aiStatus.isAIEnabled ? 'rgba(76,175,80,0.15)' : 'rgba(255,152,0,0.15)'
-                            }]}>
-                                <View style={[styles.aiDot, {
-                                    backgroundColor: aiStatus.isAIEnabled ? '#4CAF50' : '#FF9800'
-                                }]} />
-                                <Text style={[styles.aiBadgeText, {
-                                    color: aiStatus.isAIEnabled ? '#4CAF50' : '#FF9800'
-                                }]}>
-                                    {aiStatus.provider === 'gemini' ? '✨ Gemini' :
-                                        aiStatus.provider === 'openai' ? '🧠 GPT' : '📝 Template'}
-                                </Text>
-                            </View>
-                        )}
-                    </View>
+                    <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Alter Ego</Text>
+                    {aiStatus && (
+                        <View style={styles.headerRow}>
+                            <View style={[styles.aiDot, {
+                                backgroundColor: aiStatus.isAIEnabled ? ACCENT : theme.colors.textSecondary
+                            }]} />
+                            <Text style={[styles.headerSubtitle, { color: theme.colors.textSecondary }]}>
+                                {providerLabel(aiStatus.provider)}
+                            </Text>
+                        </View>
+                    )}
                 </View>
                 {tab === 'settings' && (
                     <TouchableOpacity
                         onPress={handleSave}
                         style={[styles.saveBtn, { opacity: isSaving ? 0.5 : 1 }]}
                         disabled={isSaving}
+                        hitSlop={8}
                     >
                         {isSaving ? (
-                            <ActivityIndicator size="small" color="#4CAF50" />
+                            <ActivityIndicator size="small" color={ACCENT} />
                         ) : (
-                            <Text style={[styles.saveBtnText, { color: '#4CAF50' }]}>Save</Text>
+                            <Text style={[styles.saveBtnText, { color: ACCENT }]}>Save</Text>
                         )}
                     </TouchableOpacity>
                 )}
@@ -257,36 +241,38 @@ const AlterEgoScreen = ({ navigation }) => {
             {/* Tab Bar */}
             <View style={[styles.tabBar, { borderBottomColor: theme.colors.border }]}>
                 {[
-                    { key: 'settings', icon: 'settings', label: 'Settings' },
-                    { key: 'activity', icon: 'list', label: 'Activity' },
-                    { key: 'guessWho', icon: 'help-circle', label: 'Guess Who' },
-                ].map(t => (
-                    <TouchableOpacity
-                        key={t.key}
-                        style={[styles.tabItem, tab === t.key && styles.tabItemActive]}
-                        onPress={() => setTab(t.key)}
-                    >
-                        <Ionicons
-                            name={t.icon}
-                            size={18}
-                            color={tab === t.key ? '#4CAF50' : theme.colors.textSecondary}
-                        />
-                        <Text style={[
-                            styles.tabLabel,
-                            { color: tab === t.key ? '#4CAF50' : theme.colors.textSecondary }
-                        ]}>{t.label}</Text>
-                    </TouchableOpacity>
-                ))}
+                    { key: 'settings', label: 'Settings' },
+                    { key: 'activity', label: 'Activity' },
+                    { key: 'guessWho', label: 'Guess Who' },
+                ].map(t => {
+                    const active = tab === t.key;
+                    return (
+                        <TouchableOpacity
+                            key={t.key}
+                            style={styles.tabItem}
+                            onPress={() => setTab(t.key)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={[
+                                styles.tabLabel,
+                                { color: active ? theme.colors.text : theme.colors.textSecondary }
+                            ]}>{t.label}</Text>
+                            {active && <View style={[styles.tabIndicator, { backgroundColor: ACCENT }]} />}
+                        </TouchableOpacity>
+                    );
+                })}
             </View>
 
-            {/* ═══════ SETTINGS TAB ═══════ */}
+            {/* SETTINGS */}
             {tab === 'settings' && (
                 <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                    {/* Activation Card */}
-                    <View style={[styles.activationCard, { backgroundColor: '#4CAF50' + '15' }]}>
+                    {/* Activation */}
+                    <View style={[styles.activationCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                         <View style={styles.activationInfo}>
-                            <Ionicons name="flash" size={24} color="#4CAF50" />
-                            <View style={styles.activationText}>
+                            <View style={[styles.statusDot, {
+                                backgroundColor: formData.isActive ? ACCENT : theme.colors.textSecondary
+                            }]} />
+                            <View>
                                 <Text style={[styles.activationTitle, { color: theme.colors.text }]}>
                                     {formData.isActive ? 'Active' : 'Inactive'}
                                 </Text>
@@ -298,87 +284,87 @@ const AlterEgoScreen = ({ navigation }) => {
                         <Switch
                             value={formData.isActive}
                             onValueChange={handleToggle}
-                            trackColor={{ false: theme.colors.border, true: '#4CAF50' + '50' }}
-                            thumbColor={formData.isActive ? '#4CAF50' : theme.colors.textSecondary}
+                            trackColor={{ false: theme.colors.border, true: ACCENT + '70' }}
+                            thumbColor={formData.isActive ? ACCENT : '#FFF'}
                         />
                     </View>
 
                     {/* Name */}
-                    <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-                        <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>AI NAME</Text>
-                        <TextInput
-                            style={[styles.nameInput, { color: theme.colors.text, borderColor: theme.colors.border }]}
-                            placeholder="Give your AI a name..."
-                            placeholderTextColor={theme.colors.textSecondary}
-                            value={formData.name}
-                            onChangeText={(t) => setFormData(prev => ({ ...prev, name: t }))}
-                            maxLength={20}
-                        />
-                    </View>
+                    <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary }]}>NAME</Text>
+                    <TextInput
+                        style={[styles.nameInput, {
+                            color: theme.colors.text,
+                            backgroundColor: theme.colors.surface,
+                            borderColor: theme.colors.border
+                        }]}
+                        placeholder="Name your AI"
+                        placeholderTextColor={theme.colors.textSecondary}
+                        value={formData.name}
+                        onChangeText={(t) => setFormData(prev => ({ ...prev, name: t }))}
+                        maxLength={20}
+                    />
 
                     {/* Personality */}
-                    <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-                        <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>PERSONALITY</Text>
-                        <View style={styles.personalityGrid}>
-                            {PERSONALITIES.map(p => (
+                    <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 20 }]}>PERSONALITY</Text>
+                    <View style={styles.personalityList}>
+                        {PERSONALITIES.map(p => {
+                            const active = formData.personality === p.id;
+                            return (
                                 <TouchableOpacity
                                     key={p.id}
                                     style={[
-                                        styles.personalityChip,
+                                        styles.personalityRow,
                                         {
-                                            backgroundColor: formData.personality === p.id
-                                                ? '#4CAF50' + '20'
-                                                : theme.colors.background,
-                                            borderColor: formData.personality === p.id
-                                                ? '#4CAF50'
-                                                : theme.colors.border,
+                                            backgroundColor: theme.colors.surface,
+                                            borderColor: active ? ACCENT : theme.colors.border,
                                         }
                                     ]}
                                     onPress={() => setFormData(prev => ({ ...prev, personality: p.id }))}
+                                    activeOpacity={0.7}
                                 >
-                                    <Text style={styles.personalityEmoji}>{p.emoji}</Text>
-                                    <Text style={[
-                                        styles.personalityLabel,
-                                        { color: formData.personality === p.id ? '#4CAF50' : theme.colors.text }
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.personalityLabel, { color: theme.colors.text }]}>
+                                            {p.label}
+                                        </Text>
+                                        <Text style={[styles.personalityDesc, { color: theme.colors.textSecondary }]}>
+                                            {p.desc}
+                                        </Text>
+                                    </View>
+                                    <View style={[
+                                        styles.radio,
+                                        { borderColor: active ? ACCENT : theme.colors.border }
                                     ]}>
-                                        {p.label}
-                                    </Text>
+                                        {active && <View style={[styles.radioInner, { backgroundColor: ACCENT }]} />}
+                                    </View>
                                 </TouchableOpacity>
-                            ))}
-                        </View>
+                            );
+                        })}
                     </View>
 
                     {/* Training Level */}
-                    <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-                        <Text style={[styles.sectionTitle, { color: theme.colors.textSecondary }]}>TRAINING LEVEL</Text>
-                        <View style={styles.levelRow}>
-                            {[1, 2, 3, 4, 5].map(level => (
-                                <View
-                                    key={level}
-                                    style={[
-                                        styles.levelDot,
-                                        {
-                                            backgroundColor: level <= (ego?.trainingLevel || 0)
-                                                ? '#4CAF50'
-                                                : theme.colors.border
-                                        }
-                                    ]}
-                                />
-                            ))}
+                    <Text style={[styles.sectionLabel, { color: theme.colors.textSecondary, marginTop: 20 }]}>TRAINING</Text>
+                    <View style={[styles.levelCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                        <View style={styles.levelHeader}>
+                            <Text style={[styles.levelTitle, { color: theme.colors.text }]}>Level</Text>
                             <Text style={[styles.levelText, { color: theme.colors.text }]}>
-                                {ego?.trainingLevel || 0}/5
+                                {ego?.trainingLevel || 0} / 5
                             </Text>
+                        </View>
+                        <View style={[styles.levelTrack, { backgroundColor: subtle }]}>
+                            <View
+                                style={[
+                                    styles.levelFill,
+                                    { width: `${((ego?.trainingLevel || 0) / 5) * 100}%`, backgroundColor: ACCENT }
+                                ]}
+                            />
                         </View>
                     </View>
 
-                    {/* Training Cards */}
-                    <Text style={[styles.trainSectionTitle, { color: theme.colors.text }]}>
-                        🎯 Teach Your AI
-                    </Text>
+                    <View style={{ height: 20 }} />
 
                     <TrainingCard
                         title="How do you respond to 'How are you?'"
-                        placeholder="e.g., 'Living the dream! What about you?'"
+                        placeholder="Living the dream! What about you?"
                         value={formData.training.howAreYou}
                         onChange={(t) => setFormData(prev => ({
                             ...prev,
@@ -389,7 +375,7 @@ const AlterEgoScreen = ({ navigation }) => {
 
                     <TrainingCard
                         title="Describe your humor style"
-                        placeholder="e.g., 'I love puns and self-deprecating jokes'"
+                        placeholder="I love puns and self-deprecating jokes"
                         value={formData.training.humorStyle}
                         onChange={(t) => setFormData(prev => ({
                             ...prev,
@@ -400,7 +386,7 @@ const AlterEgoScreen = ({ navigation }) => {
 
                     <TrainingCard
                         title="How do you respond to compliments?"
-                        placeholder="e.g., 'Aw thanks! You're too kind 😊'"
+                        placeholder="Aw thanks, you're too kind"
                         value={formData.training.complimentResponse}
                         onChange={(t) => setFormData(prev => ({
                             ...prev,
@@ -409,55 +395,52 @@ const AlterEgoScreen = ({ navigation }) => {
                         theme={theme}
                     />
 
-                    {/* Test Button */}
                     <TouchableOpacity
-                        style={[styles.testBtn, { backgroundColor: theme.colors.surface, borderColor: '#4CAF50' }]}
+                        style={[styles.testBtn, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}
                         onPress={handleTestResponse}
+                        activeOpacity={0.8}
                     >
-                        <Ionicons name="chatbubble" size={18} color="#4CAF50" />
-                        <Text style={[styles.testBtnText, { color: '#4CAF50' }]}>Test AI Response</Text>
+                        <Ionicons name="chatbubble-outline" size={18} color={theme.colors.text} />
+                        <Text style={[styles.testBtnText, { color: theme.colors.text }]}>Test AI response</Text>
                     </TouchableOpacity>
                 </ScrollView>
             )}
 
-            {/* ═══════ ACTIVITY TAB ═══════ */}
+            {/* ACTIVITY */}
             {tab === 'activity' && (
                 <FlatList
                     data={activityLog}
                     keyExtractor={(_, i) => i.toString()}
                     contentContainerStyle={styles.content}
-                    ListHeaderComponent={
-                        <Text style={[styles.trainSectionTitle, { color: theme.colors.text }]}>
-                            📋 AI Activity Log
-                        </Text>
-                    }
                     renderItem={({ item }) => {
                         const typeConfig = {
-                            dm_reply: { icon: 'chatbubble', color: '#2196F3', label: 'DM Reply' },
-                            comment_reply: { icon: 'chatbubbles', color: '#FF9800', label: 'Comment Reply' },
-                            guess_game: { icon: 'help-circle', color: '#9C27B0', label: 'Guess Game' },
+                            dm_reply: { icon: 'chatbubble-outline', label: 'DM reply' },
+                            comment_reply: { icon: 'chatbubbles-outline', label: 'Comment reply' },
+                            guess_game: { icon: 'help-circle-outline', label: 'Guess game' },
                         };
-                        const cfg = typeConfig[item.type] || { icon: 'flash', color: '#4CAF50', label: item.type };
+                        const cfg = typeConfig[item.type] || { icon: 'flash-outline', label: item.type };
 
                         return (
-                            <View style={[styles.activityItem, { backgroundColor: theme.colors.surface }]}>
-                                <View style={[styles.activityIcon, { backgroundColor: cfg.color + '20' }]}>
-                                    <Ionicons name={cfg.icon} size={18} color={cfg.color} />
+                            <View style={[styles.activityItem, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                                <View style={[styles.activityIcon, { backgroundColor: subtle }]}>
+                                    <Ionicons name={cfg.icon} size={18} color={theme.colors.text} />
                                 </View>
                                 <View style={styles.activityContent}>
-                                    <Text style={[styles.activityLabel, { color: cfg.color }]}>{cfg.label}</Text>
+                                    <View style={styles.activityHeader}>
+                                        <Text style={[styles.activityLabel, { color: theme.colors.text }]}>{cfg.label}</Text>
+                                        <Text style={[styles.activityTime, { color: theme.colors.textSecondary }]}>
+                                            {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ''}
+                                        </Text>
+                                    </View>
                                     {item.trigger && (
                                         <Text style={[styles.activityTrigger, { color: theme.colors.textSecondary }]}
                                             numberOfLines={1}>
-                                            "{item.trigger}"
+                                            “{item.trigger}”
                                         </Text>
                                     )}
                                     <Text style={[styles.activityResponse, { color: theme.colors.text }]}
                                         numberOfLines={2}>
                                         {item.response}
-                                    </Text>
-                                    <Text style={[styles.activityTime, { color: theme.colors.textSecondary }]}>
-                                        {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : ''}
                                     </Text>
                                 </View>
                             </View>
@@ -465,7 +448,9 @@ const AlterEgoScreen = ({ navigation }) => {
                     }}
                     ListEmptyComponent={
                         <View style={styles.emptyState}>
-                            <Text style={styles.emptyEmoji}>🤖</Text>
+                            <View style={[styles.emptyIconCircle, { backgroundColor: subtle }]}>
+                                <Ionicons name="time-outline" size={28} color={theme.colors.textSecondary} />
+                            </View>
                             <Text style={[styles.emptyText, { color: theme.colors.textSecondary }]}>
                                 No activity yet. Activate your AI and it will start logging responses here.
                             </Text>
@@ -474,114 +459,96 @@ const AlterEgoScreen = ({ navigation }) => {
                 />
             )}
 
-            {/* ═══════ GUESS WHO TAB ═══════ */}
+            {/* GUESS WHO */}
             {tab === 'guessWho' && (
                 <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-                    <View style={styles.guessHeader}>
-                        <Text style={[styles.guessTitle, { color: theme.colors.text }]}>
-                            🎭 Guess Who Said It?
-                        </Text>
-                        <Text style={[styles.guessDesc, { color: theme.colors.textSecondary }]}>
-                            Can you tell the difference between your Alter Ego's responses and real ones?
-                        </Text>
-                    </View>
+                    <Text style={[styles.guessTitle, { color: theme.colors.text }]}>Guess Who Said It</Text>
+                    <Text style={[styles.guessDesc, { color: theme.colors.textSecondary }]}>
+                        Can you tell your AI's responses from real ones?
+                    </Text>
 
-                    {/* Stats */}
                     {guessStats && (
-                        <View style={[styles.guessStatsRow, { backgroundColor: theme.colors.surface }]}>
-                            <View style={styles.guessStat}>
-                                <Text style={[styles.guessStatValue, { color: '#4CAF50' }]}>
-                                    {guessStats.totalGuesses || 0}
-                                </Text>
-                                <Text style={[styles.guessStatLabel, { color: theme.colors.textSecondary }]}>
-                                    Played
-                                </Text>
-                            </View>
-                            <View style={styles.guessStat}>
-                                <Text style={[styles.guessStatValue, { color: '#2196F3' }]}>
-                                    {guessStats.correctGuesses || 0}
-                                </Text>
-                                <Text style={[styles.guessStatLabel, { color: theme.colors.textSecondary }]}>
-                                    Correct
-                                </Text>
-                            </View>
-                            <View style={styles.guessStat}>
-                                <Text style={[styles.guessStatValue, { color: '#FF9800' }]}>
-                                    {guessStats.fooledCount || 0}
-                                </Text>
-                                <Text style={[styles.guessStatLabel, { color: theme.colors.textSecondary }]}>
-                                    Fooled
-                                </Text>
-                            </View>
-                            <View style={styles.guessStat}>
-                                <Text style={[styles.guessStatValue, { color: '#9C27B0' }]}>
-                                    {guessStats.accuracy != null ? `${guessStats.accuracy}%` : '—'}
-                                </Text>
-                                <Text style={[styles.guessStatLabel, { color: theme.colors.textSecondary }]}>
-                                    Accuracy
-                                </Text>
-                            </View>
+                        <View style={[styles.guessStatsRow, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+                            {[
+                                { value: guessStats.totalGuesses || 0, label: 'Played' },
+                                { value: guessStats.correctGuesses || 0, label: 'Correct' },
+                                { value: guessStats.fooledCount || 0, label: 'Fooled' },
+                                { value: guessStats.accuracy != null ? `${guessStats.accuracy}%` : '—', label: 'Accuracy' },
+                            ].map((s, i) => (
+                                <View key={i} style={styles.guessStat}>
+                                    <Text style={[styles.guessStatValue, { color: theme.colors.text }]}>{s.value}</Text>
+                                    <Text style={[styles.guessStatLabel, { color: theme.colors.textSecondary }]}>{s.label}</Text>
+                                </View>
+                            ))}
                         </View>
                     )}
 
-                    {/* Game Area */}
                     {!guessState && (
                         <TouchableOpacity
-                            style={[styles.startGameBtn, { backgroundColor: '#4CAF50' }]}
+                            style={[styles.primaryBtn, { backgroundColor: ACCENT }]}
                             onPress={startGuessRound}
+                            activeOpacity={0.85}
                         >
-                            <Text style={styles.startGameBtnText}>🎲 Start Round</Text>
+                            <Text style={styles.primaryBtnText}>Start round</Text>
                         </TouchableOpacity>
                     )}
 
                     {guessState && (
-                        <View style={[styles.guessCard, { backgroundColor: theme.colors.surface }]}>
+                        <View style={[styles.guessCard, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                             <Text style={[styles.guessPrompt, { color: theme.colors.textSecondary }]}>
-                                Someone received "Hey what have you been up to?" and replied:
+                                Someone received “Hey what have you been up to?” and replied:
                             </Text>
-                            <View style={[styles.guessBubble, { backgroundColor: isDark ? '#2C2C2E' : '#F0F0F5' }]}>
+                            <View style={[styles.guessBubble, { backgroundColor: subtle }]}>
                                 <Text style={[styles.guessBubbleText, { color: theme.colors.text }]}>
-                                    "{guessState.message}"
+                                    “{guessState.message}”
                                 </Text>
                             </View>
 
                             {!guessState.showAnswer ? (
                                 <View style={styles.guessButtons}>
                                     <TouchableOpacity
-                                        style={[styles.guessBtn, { backgroundColor: '#2196F3' }]}
+                                        style={[styles.guessBtn, { borderColor: theme.colors.border, backgroundColor: subtle }]}
                                         onPress={() => submitGuess(false)}
+                                        activeOpacity={0.85}
                                     >
-                                        <Text style={styles.guessBtnText}>👤 Real Person</Text>
+                                        <Text style={[styles.guessBtnText, { color: theme.colors.text }]}>Real person</Text>
                                     </TouchableOpacity>
                                     <TouchableOpacity
-                                        style={[styles.guessBtn, { backgroundColor: '#FF9800' }]}
+                                        style={[styles.guessBtn, { borderColor: theme.colors.border, backgroundColor: subtle }]}
                                         onPress={() => submitGuess(true)}
+                                        activeOpacity={0.85}
                                     >
-                                        <Text style={styles.guessBtnText}>🤖 AI Alter Ego</Text>
+                                        <Text style={[styles.guessBtnText, { color: theme.colors.text }]}>AI Alter Ego</Text>
                                     </TouchableOpacity>
                                 </View>
                             ) : (
                                 <View style={styles.guessResult}>
-                                    <Text style={[styles.guessResultEmoji]}>
-                                        {guessState.correct ? '✅' : '❌'}
-                                    </Text>
-                                    <Text style={[styles.guessResultText, {
-                                        color: guessState.correct ? '#4CAF50' : '#F44336'
-                                    }]}>
-                                        {guessState.correct ? 'You got it right!' : 'Fooled you!'}
+                                    <View style={[
+                                        styles.resultBadge,
+                                        { backgroundColor: guessState.correct ? ACCENT : '#F44336' }
+                                    ]}>
+                                        <Ionicons
+                                            name={guessState.correct ? 'checkmark' : 'close'}
+                                            size={20}
+                                            color="#FFF"
+                                        />
+                                    </View>
+                                    <Text style={[styles.guessResultText, { color: theme.colors.text }]}>
+                                        {guessState.correct ? 'You got it right' : 'Fooled you'}
                                     </Text>
                                     <Text style={[styles.guessResultSub, { color: theme.colors.textSecondary }]}>
                                         That was from the AI Alter Ego
                                     </Text>
 
                                     <TouchableOpacity
-                                        style={[styles.nextRoundBtn, { borderColor: '#4CAF50' }]}
+                                        style={[styles.nextRoundBtn, { borderColor: theme.colors.border }]}
                                         onPress={() => {
                                             setGuessState(null);
                                             startGuessRound();
                                         }}
+                                        activeOpacity={0.85}
                                     >
-                                        <Text style={{ color: '#4CAF50', fontWeight: '700' }}>Next Round →</Text>
+                                        <Text style={{ color: theme.colors.text, fontWeight: '600' }}>Next round</Text>
                                     </TouchableOpacity>
                                 </View>
                             )}
@@ -595,224 +562,218 @@ const AlterEgoScreen = ({ navigation }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
+
     header: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
-    backBtn: { padding: 4, marginRight: 12 },
+    backBtn: { padding: 4, marginRight: 8 },
     headerCenter: { flex: 1 },
-    headerTitle: { fontSize: 20, fontWeight: '800' },
-    headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },
-    headerSubtitle: { fontSize: 12 },
-    aiBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 3,
-        borderRadius: 10,
-        gap: 4
-    },
+    headerTitle: { fontSize: 20, fontWeight: '700', letterSpacing: -0.3 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+    headerSubtitle: { fontSize: 12, fontWeight: '500' },
     aiDot: { width: 6, height: 6, borderRadius: 3 },
-    aiBadgeText: { fontSize: 10, fontWeight: '700' },
-    saveBtn: { padding: 8 },
-    saveBtnText: { fontSize: 16, fontWeight: '700' },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        gap: 12,
-    },
+    saveBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+    saveBtnText: { fontSize: 16, fontWeight: '600' },
+
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
     loadingText: { fontSize: 14 },
 
-    // Tab Bar
     tabBar: {
         flexDirection: 'row',
-        borderBottomWidth: 1,
-        paddingHorizontal: 8,
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     tabItem: {
         flex: 1,
-        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        gap: 6,
+        paddingVertical: 14,
+        position: 'relative',
     },
-    tabItemActive: {
-        borderBottomWidth: 2,
-        borderBottomColor: '#4CAF50',
+    tabLabel: { fontSize: 14, fontWeight: '600' },
+    tabIndicator: {
+        position: 'absolute',
+        bottom: -StyleSheet.hairlineWidth,
+        height: 2,
+        left: '30%',
+        right: '30%',
+        borderRadius: 1,
     },
-    tabLabel: { fontSize: 13, fontWeight: '600' },
 
-    // Content
     content: { padding: 16, paddingBottom: 40 },
+
     activationCard: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         padding: 16,
-        borderRadius: 16,
-        marginBottom: 16,
+        borderRadius: 14,
+        borderWidth: StyleSheet.hairlineWidth,
+        marginBottom: 24,
     },
-    activationInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    activationText: {},
-    activationTitle: { fontSize: 16, fontWeight: '700' },
-    activationDesc: { fontSize: 12, marginTop: 2 },
-    section: {
-        padding: 16,
-        borderRadius: 16,
-        marginBottom: 12,
-    },
-    sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 1, marginBottom: 12 },
+    activationInfo: { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+    statusDot: { width: 10, height: 10, borderRadius: 5 },
+    activationTitle: { fontSize: 16, fontWeight: '600' },
+    activationDesc: { fontSize: 13, marginTop: 2 },
+
+    sectionLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.8, marginBottom: 8 },
+
     nameInput: {
-        borderWidth: 1,
+        borderWidth: StyleSheet.hairlineWidth,
         borderRadius: 12,
-        padding: 14,
-        fontSize: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 15,
     },
-    personalityGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    personalityChip: {
+
+    personalityList: { gap: 8 },
+    personalityRow: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        gap: 6,
-    },
-    personalityEmoji: { fontSize: 16 },
-    personalityLabel: { fontSize: 14, fontWeight: '600' },
-    levelRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    levelDot: {
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-    },
-    levelText: { fontSize: 14, fontWeight: '700', marginLeft: 8 },
-    trainSectionTitle: {
-        fontSize: 18,
-        fontWeight: '700',
-        marginTop: 8,
-        marginBottom: 12,
-    },
-    trainingCard: {
-        padding: 16,
-        borderRadius: 16,
-        marginBottom: 12,
-    },
-    trainingTitle: { fontSize: 14, fontWeight: '600', marginBottom: 10 },
-    trainingInput: {
-        borderWidth: 1,
+        paddingVertical: 12,
         borderRadius: 12,
+        borderWidth: 1,
+    },
+    personalityLabel: { fontSize: 15, fontWeight: '600' },
+    personalityDesc: { fontSize: 12, marginTop: 2 },
+    radio: {
+        width: 20, height: 20, borderRadius: 10,
+        borderWidth: 2,
+        justifyContent: 'center', alignItems: 'center',
+    },
+    radioInner: { width: 10, height: 10, borderRadius: 5 },
+
+    levelCard: {
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+    },
+    levelHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+    levelTitle: { fontSize: 14, fontWeight: '500' },
+    levelText: { fontSize: 14, fontWeight: '600' },
+    levelTrack: { height: 4, borderRadius: 2, overflow: 'hidden' },
+    levelFill: { height: 4, borderRadius: 2 },
+
+    trainingCard: {
+        padding: 14,
+        borderRadius: 12,
+        marginBottom: 10,
+        borderWidth: StyleSheet.hairlineWidth,
+    },
+    trainingTitle: { fontSize: 14, fontWeight: '600', marginBottom: 8 },
+    trainingInput: {
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 10,
         padding: 12,
-        fontSize: 15,
-        minHeight: 60,
+        fontSize: 14,
+        minHeight: 56,
         textAlignVertical: 'top',
     },
+
     testBtn: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 14,
-        borderRadius: 24,
-        borderWidth: 1.5,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
         gap: 8,
-        marginTop: 8,
+        marginTop: 12,
     },
-    testBtnText: { fontSize: 15, fontWeight: '700' },
+    testBtnText: { fontSize: 15, fontWeight: '600' },
 
-    // Activity Log
+    // Activity
     activityItem: {
         flexDirection: 'row',
         padding: 14,
-        borderRadius: 14,
+        borderRadius: 12,
         marginBottom: 8,
         gap: 12,
+        borderWidth: StyleSheet.hairlineWidth,
     },
     activityIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
+        width: 36, height: 36, borderRadius: 18,
+        justifyContent: 'center', alignItems: 'center',
     },
     activityContent: { flex: 1 },
-    activityLabel: { fontSize: 12, fontWeight: '700', marginBottom: 2 },
-    activityTrigger: { fontSize: 12, fontStyle: 'italic', marginBottom: 2 },
-    activityResponse: { fontSize: 14, lineHeight: 20 },
-    activityTime: { fontSize: 11, marginTop: 4 },
+    activityHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    activityLabel: { fontSize: 13, fontWeight: '600' },
+    activityTime: { fontSize: 11 },
+    activityTrigger: { fontSize: 12, fontStyle: 'italic', marginTop: 4 },
+    activityResponse: { fontSize: 14, lineHeight: 19, marginTop: 4 },
 
-    // Empty state
-    emptyState: { alignItems: 'center', paddingTop: 60 },
-    emptyEmoji: { fontSize: 50, marginBottom: 12 },
-    emptyText: { fontSize: 14, textAlign: 'center', paddingHorizontal: 40 },
+    emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 40 },
+    emptyIconCircle: {
+        width: 64, height: 64, borderRadius: 32,
+        justifyContent: 'center', alignItems: 'center',
+        marginBottom: 16,
+    },
+    emptyText: { fontSize: 14, textAlign: 'center', lineHeight: 20 },
 
     // Guess Who
-    guessHeader: { alignItems: 'center', marginBottom: 20 },
-    guessTitle: { fontSize: 24, fontWeight: '900' },
-    guessDesc: { fontSize: 14, textAlign: 'center', marginTop: 6 },
+    guessTitle: { fontSize: 22, fontWeight: '700', letterSpacing: -0.3 },
+    guessDesc: { fontSize: 14, marginTop: 6, marginBottom: 20 },
+
     guessStatsRow: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
         padding: 16,
-        borderRadius: 16,
+        borderRadius: 12,
         marginBottom: 20,
+        borderWidth: StyleSheet.hairlineWidth,
     },
-    guessStat: { alignItems: 'center' },
-    guessStatValue: { fontSize: 22, fontWeight: '800' },
+    guessStat: { flex: 1, alignItems: 'center' },
+    guessStatValue: { fontSize: 20, fontWeight: '700' },
     guessStatLabel: { fontSize: 11, marginTop: 2 },
-    startGameBtn: {
-        paddingVertical: 16,
-        borderRadius: 28,
+
+    primaryBtn: {
+        paddingVertical: 14,
+        borderRadius: 12,
         alignItems: 'center',
-        marginTop: 10,
+        marginTop: 4,
     },
-    startGameBtnText: { color: '#FFF', fontSize: 18, fontWeight: '800' },
+    primaryBtnText: { color: '#FFF', fontSize: 16, fontWeight: '600' },
+
     guessCard: {
-        padding: 20,
-        borderRadius: 20,
-        marginTop: 10,
+        padding: 18,
+        borderRadius: 14,
+        marginTop: 4,
+        borderWidth: StyleSheet.hairlineWidth,
     },
     guessPrompt: { fontSize: 13, marginBottom: 12, textAlign: 'center' },
     guessBubble: {
         padding: 16,
-        borderRadius: 16,
+        borderRadius: 12,
         marginBottom: 20,
     },
-    guessBubbleText: { fontSize: 16, lineHeight: 24, fontStyle: 'italic', textAlign: 'center' },
-    guessButtons: { flexDirection: 'row', gap: 12 },
+    guessBubbleText: { fontSize: 16, lineHeight: 24, textAlign: 'center' },
+
+    guessButtons: { flexDirection: 'row', gap: 10 },
     guessBtn: {
         flex: 1,
         paddingVertical: 14,
-        borderRadius: 24,
+        borderRadius: 12,
         alignItems: 'center',
+        borderWidth: 1,
     },
-    guessBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
-    guessResult: { alignItems: 'center', paddingVertical: 10 },
-    guessResultEmoji: { fontSize: 44, marginBottom: 8 },
-    guessResultText: { fontSize: 20, fontWeight: '800' },
+    guessBtnText: { fontSize: 14, fontWeight: '600' },
+
+    guessResult: { alignItems: 'center', paddingVertical: 8 },
+    resultBadge: {
+        width: 44, height: 44, borderRadius: 22,
+        justifyContent: 'center', alignItems: 'center',
+        marginBottom: 12,
+    },
+    guessResultText: { fontSize: 18, fontWeight: '600' },
     guessResultSub: { fontSize: 13, marginTop: 4 },
     nextRoundBtn: {
-        borderWidth: 1.5,
+        borderWidth: 1,
         paddingHorizontal: 24,
         paddingVertical: 10,
-        borderRadius: 20,
-        marginTop: 16,
+        borderRadius: 10,
+        marginTop: 18,
     },
 });
 

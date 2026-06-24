@@ -1,13 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 // ✅ IMPORT initialWindowMetrics
 import { SafeAreaProvider, initialWindowMetrics } from 'react-native-safe-area-context';
-import { ActivityIndicator, View, Text, ScrollView } from 'react-native';
+import { ActivityIndicator, View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { store } from './src/redux/store';
-import { loginSuccess } from './src/redux/slices/authSlice';
+import { loginSuccess, setUser } from './src/redux/slices/authSlice';
+import api from './src/services/api';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ThemeStatusBar } from './src/components/UI/ThemeStatusBar';
@@ -28,39 +28,54 @@ class ErrorBoundary extends React.Component {
     this.setState({ errorInfo });
   }
 
+  handleRestart = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
+  };
+
   render() {
     if (this.state.hasError) {
+      if (__DEV__) {
+        return (
+          <View style={{ flex: 1, padding: 20, backgroundColor: '#1a1a2e', justifyContent: 'center' }}>
+            <ScrollView>
+              <Text style={{ color: '#ff6b6b', fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>
+                🔴 App Crashed!
+              </Text>
+              <Text style={{ color: '#fff', fontSize: 14, marginBottom: 10 }}>
+                Error: {this.state.error?.message || String(this.state.error)}
+              </Text>
+              <Text style={{ color: '#888', fontSize: 12 }}>
+                {this.state.error?.stack}
+              </Text>
+              <Text style={{ color: '#888', fontSize: 12, marginTop: 10 }}>
+                Component Stack: {this.state.errorInfo?.componentStack}
+              </Text>
+            </ScrollView>
+          </View>
+        );
+      }
+
       return (
-        <View style={{ flex: 1, padding: 20, backgroundColor: '#1a1a2e', justifyContent: 'center' }}>
-          <ScrollView>
-            <Text style={{ color: '#ff6b6b', fontSize: 20, fontWeight: 'bold', marginBottom: 10 }}>
-              🔴 App Crashed!
-            </Text>
-            <Text style={{ color: '#fff', fontSize: 14, marginBottom: 10 }}>
-              Error: {this.state.error?.message || String(this.state.error)}
-            </Text>
-            <Text style={{ color: '#888', fontSize: 12 }}>
-              {this.state.error?.stack}
-            </Text>
-            <Text style={{ color: '#888', fontSize: 12, marginTop: 10 }}>
-              Component Stack: {this.state.errorInfo?.componentStack}
-            </Text>
-          </ScrollView>
+        <View style={{ flex: 1, padding: 32, backgroundColor: '#0F1419', justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ fontSize: 48, marginBottom: 16 }}>😵</Text>
+          <Text style={{ color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 8 }}>
+            Something went wrong
+          </Text>
+          <Text style={{ color: '#888', fontSize: 14, textAlign: 'center', lineHeight: 20, marginBottom: 24 }}>
+            Pulse ran into an unexpected issue. Please try again.
+          </Text>
+          <TouchableOpacity
+            onPress={this.handleRestart}
+            style={{ backgroundColor: '#1E88E5', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600' }}>Try Again</Text>
+          </TouchableOpacity>
         </View>
       );
     }
     return this.props.children;
   }
 }
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,
-      retry: 3,
-    },
-  },
-});
 
 // ✅ Check login on app start
 const AuthLoader = ({ children }) => {
@@ -76,6 +91,19 @@ const AuthLoader = ({ children }) => {
         if (token && userStr) {
           const user = JSON.parse(userStr);
           dispatch(loginSuccess({ user, token }));
+
+          // Refresh the user from the server so cached sessions pick up fields
+          // added/changed since last login (e.g. profile.avatar) instead of
+          // showing stale data until the next manual profile visit.
+          api.get('/auth/me')
+            .then((res) => {
+              const fresh = res.data?.user;
+              if (fresh) {
+                dispatch(setUser(fresh));
+                AsyncStorage.setItem('user', JSON.stringify(fresh)).catch(() => {});
+              }
+            })
+            .catch(() => { /* offline / token expiring — keep cached user */ });
 
           // Initialize push notifications after login
           pushNotifications.initializePushNotifications()
@@ -173,14 +201,12 @@ export default function App() {
       <SafeAreaProvider initialWindowMetrics={initialWindowMetrics}>
         <Provider store={store}>
           <ThemeProvider>
-            <QueryClientProvider client={queryClient}>
-              <ThemeStatusBar />
-              <AuthLoader>
-                <NavigationTheme>
-                  <RootNavigator />
-                </NavigationTheme>
-              </AuthLoader>
-            </QueryClientProvider>
+            <ThemeStatusBar />
+            <AuthLoader>
+              <NavigationTheme>
+                <RootNavigator />
+              </NavigationTheme>
+            </AuthLoader>
           </ThemeProvider>
         </Provider>
       </SafeAreaProvider>

@@ -1,60 +1,59 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     Animated,
-    Dimensions,
+    Easing,
     TextInput,
     FlatList,
-    ActivityIndicator,
     StatusBar,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    SafeAreaView
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../contexts/ThemeContext';
 import { getTheme } from '../styles/theme';
 import api from '../services/api';
 
-const { width } = Dimensions.get('window');
+const ACCENT = '#FF6B35';
+const CHAT_DURATION = 180;
 
 const RouletteScreen = ({ navigation }) => {
     const { isDark } = useTheme();
     const theme = getTheme(isDark);
 
-    const [phase, setPhase] = useState('idle');    // idle | searching | matched | chatting | deciding | result
+    const [phase, setPhase] = useState('idle');
     const [sessionId, setSessionId] = useState(null);
     const [partner, setPartner] = useState(null);
     const [icebreaker, setIcebreaker] = useState('');
     const [messages, setMessages] = useState([]);
     const [messageText, setMessageText] = useState('');
-    const [timeLeft, setTimeLeft] = useState(180);
+    const [timeLeft, setTimeLeft] = useState(CHAT_DURATION);
     const [outcome, setOutcome] = useState(null);
 
-    const spinAnim = useRef(new Animated.Value(0)).current;
+    const pulseAnim = useRef(new Animated.Value(0)).current;
     const pollRef = useRef(null);
     const timerRef = useRef(null);
     const flatListRef = useRef(null);
 
-    // Spin animation for searching
     useEffect(() => {
         if (phase === 'searching') {
             Animated.loop(
-                Animated.timing(spinAnim, {
+                Animated.timing(pulseAnim, {
                     toValue: 1,
-                    duration: 2000,
+                    duration: 1600,
+                    easing: Easing.out(Easing.ease),
                     useNativeDriver: true
                 })
             ).start();
         } else {
-            spinAnim.setValue(0);
+            pulseAnim.setValue(0);
         }
-    }, [phase, spinAnim]);
+    }, [phase, pulseAnim]);
 
-    // Poll for status when searching
     useEffect(() => {
         if (phase === 'searching') {
             pollRef.current = setInterval(async () => {
@@ -68,7 +67,7 @@ const RouletteScreen = ({ navigation }) => {
                             setPartner(data.partner);
                             setIcebreaker(data.icebreaker);
                             setMessages(data.messages || []);
-                            setTimeLeft(data.timeRemaining || 180);
+                            setTimeLeft(data.timeRemaining || CHAT_DURATION);
                             clearInterval(pollRef.current);
                         }
                     }
@@ -77,13 +76,11 @@ const RouletteScreen = ({ navigation }) => {
                 }
             }, 2000);
         }
-
         return () => {
             if (pollRef.current) clearInterval(pollRef.current);
         };
     }, [phase]);
 
-    // Chat timer countdown
     useEffect(() => {
         if (phase === 'chatting' && timeLeft > 0) {
             timerRef.current = setInterval(() => {
@@ -97,13 +94,11 @@ const RouletteScreen = ({ navigation }) => {
                 });
             }, 1000);
         }
-
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
     }, [phase, timeLeft]);
 
-    // Poll messages during chat
     useEffect(() => {
         if (phase === 'chatting') {
             const msgPoll = setInterval(async () => {
@@ -120,7 +115,6 @@ const RouletteScreen = ({ navigation }) => {
                     }
                 } catch (e) { /* silent */ }
             }, 3000);
-
             return () => clearInterval(msgPoll);
         }
     }, [phase]);
@@ -132,12 +126,11 @@ const RouletteScreen = ({ navigation }) => {
             if (res.data.success) {
                 const data = res.data.data;
                 setSessionId(data.sessionId);
-
                 if (data.status === 'matched') {
                     setPhase('chatting');
                     setPartner(data.partner);
                     setIcebreaker(data.icebreaker);
-                    setTimeLeft(data.chatDuration || 180);
+                    setTimeLeft(data.chatDuration || CHAT_DURATION);
                 }
             }
         } catch (e) {
@@ -147,21 +140,15 @@ const RouletteScreen = ({ navigation }) => {
     };
 
     const handleLeave = async () => {
-        try {
-            await api.post('/roulette/leave');
-        } catch (e) { /* silent */ }
+        try { await api.post('/roulette/leave'); } catch (e) { /* silent */ }
         resetState();
     };
 
     const handleSend = async () => {
         if (!messageText.trim() || !sessionId) return;
-
         const text = messageText.trim();
         setMessageText('');
-
-        // Optimistic update
         setMessages(prev => [...prev, { sender: { _id: 'me' }, text, timestamp: new Date() }]);
-
         try {
             await api.post('/roulette/message', { sessionId, text });
         } catch (e) {
@@ -188,149 +175,178 @@ const RouletteScreen = ({ navigation }) => {
         setIcebreaker('');
         setMessages([]);
         setMessageText('');
-        setTimeLeft(180);
+        setTimeLeft(CHAT_DURATION);
         setOutcome(null);
     };
 
     const formatTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-    // ═══════ IDLE SCREEN ═══════
+    const bg = theme.colors.background;
+    const surface = isDark ? '#1C1C1E' : '#FFFFFF';
+    const subtle = isDark ? '#2A2A2C' : '#F2F2F5';
+
+    // ───────── IDLE ─────────
     if (phase === 'idle') {
         return (
-            <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-                <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-                <LinearGradient
-                    colors={['#FF6B35', '#E91E63', isDark ? '#000' : '#1A1A2E']}
-                    style={styles.fullScreen}
-                >
-                    <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-                        <Ionicons name="arrow-back" size={24} color="#FFF" />
-                    </TouchableOpacity>
+            <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
 
-                    <Text style={styles.idleEmoji}>🎰</Text>
-                    <Text style={styles.idleTitle}>Pulse Roulette</Text>
-                    <Text style={styles.idleDesc}>
-                        Get matched with a random person for a 3-minute timed chat.{'\n'}
-                        If you vibe, connect. If not, no pressure.
+                <View style={styles.topBar}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={12}>
+                        <Ionicons name="chevron-back" size={26} color={theme.colors.text} />
+                    </TouchableOpacity>
+                </View>
+
+                <View style={styles.idleBody}>
+                    <View style={[styles.iconCircle, { backgroundColor: subtle }]}>
+                        <Ionicons name="shuffle" size={40} color={ACCENT} />
+                    </View>
+
+                    <Text style={[styles.title, { color: theme.colors.text }]}>Roulette</Text>
+                    <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                        A 3-minute chat with someone new.{'\n'}If you vibe, connect.
                     </Text>
 
-                    <TouchableOpacity style={styles.spinBtn} onPress={handleJoin}>
-                        <LinearGradient
-                            colors={['#FFF', 'rgba(255,255,255,0.9)']}
-                            style={styles.spinBtnGradient}
-                        >
-                            <Text style={styles.spinBtnText}>🎲 Spin the Roulette</Text>
-                        </LinearGradient>
+                    <TouchableOpacity
+                        style={[styles.primaryBtn, { backgroundColor: ACCENT }]}
+                        onPress={handleJoin}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={styles.primaryBtnText}>Start</Text>
                     </TouchableOpacity>
 
-                    <View style={styles.rulesRow}>
-                        {[
-                            { icon: '⏱️', text: '3 min chat' },
-                            { icon: '🤝', text: 'Connect or pass' },
-                            { icon: '🎭', text: 'Be yourself' }
-                        ].map((r, i) => (
-                            <View key={i} style={styles.ruleItem}>
-                                <Text style={styles.ruleIcon}>{r.icon}</Text>
-                                <Text style={styles.ruleText}>{r.text}</Text>
-                            </View>
-                        ))}
+                    <View style={styles.metaRow}>
+                        <View style={styles.metaItem}>
+                            <Ionicons name="time-outline" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>3 min</Text>
+                        </View>
+                        <View style={[styles.metaDot, { backgroundColor: theme.colors.border }]} />
+                        <View style={styles.metaItem}>
+                            <Ionicons name="person-outline" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>1-on-1</Text>
+                        </View>
+                        <View style={[styles.metaDot, { backgroundColor: theme.colors.border }]} />
+                        <View style={styles.metaItem}>
+                            <Ionicons name="lock-closed-outline" size={16} color={theme.colors.textSecondary} />
+                            <Text style={[styles.metaText, { color: theme.colors.textSecondary }]}>Private</Text>
+                        </View>
                     </View>
-                </LinearGradient>
-            </View>
+                </View>
+            </SafeAreaView>
         );
     }
 
-    // ═══════ SEARCHING ═══════
+    // ───────── SEARCHING ─────────
     if (phase === 'searching') {
-        const spin = spinAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['0deg', '360deg']
-        });
+        const ringScale = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.2] });
+        const ringOpacity = pulseAnim.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0] });
 
         return (
-            <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-                <StatusBar barStyle="light-content" />
-                <LinearGradient
-                    colors={['#FF6B35', '#E91E63', isDark ? '#000' : '#1A1A2E']}
-                    style={styles.fullScreen}
-                >
-                    <Animated.Text style={[styles.searchEmoji, { transform: [{ rotate: spin }] }]}>
-                        🎰
-                    </Animated.Text>
-                    <Text style={styles.searchTitle}>Finding your match...</Text>
-                    <Text style={styles.searchSub}>This usually takes under 30 seconds</Text>
+            <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
 
-                    <TouchableOpacity style={styles.cancelBtn} onPress={handleLeave}>
-                        <Text style={styles.cancelText}>Cancel</Text>
+                <View style={styles.idleBody}>
+                    <View style={styles.pulseWrap}>
+                        <Animated.View
+                            style={[
+                                styles.pulseRing,
+                                { borderColor: ACCENT, transform: [{ scale: ringScale }], opacity: ringOpacity }
+                            ]}
+                        />
+                        <View style={[styles.iconCircle, { backgroundColor: ACCENT }]}>
+                            <Ionicons name="shuffle" size={40} color="#FFF" />
+                        </View>
+                    </View>
+
+                    <Text style={[styles.title, { color: theme.colors.text, marginTop: 32 }]}>Looking for someone</Text>
+                    <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
+                        Usually under 30 seconds
+                    </Text>
+
+                    <TouchableOpacity style={styles.ghostBtn} onPress={handleLeave}>
+                        <Text style={[styles.ghostBtnText, { color: theme.colors.textSecondary }]}>Cancel</Text>
                     </TouchableOpacity>
-                </LinearGradient>
-            </View>
+                </View>
+            </SafeAreaView>
         );
     }
 
-    // ═══════ CHATTING ═══════
+    // ───────── CHAT / DECIDE ─────────
     if (phase === 'chatting' || phase === 'deciding') {
         const initial = (partner?.username || '?').charAt(0).toUpperCase();
         const isDeciding = phase === 'deciding';
+        const progress = Math.max(0, Math.min(1, timeLeft / CHAT_DURATION));
+        const lowTime = timeLeft < 30;
 
         return (
             <KeyboardAvoidingView
-                style={[styles.container, { backgroundColor: theme.colors.background }]}
+                style={[styles.container, { backgroundColor: bg }]}
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
             >
-                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={surface} />
 
-                {/* Header */}
-                <View style={[styles.chatHeader, { backgroundColor: isDark ? '#1C1C1E' : '#FFF', borderBottomColor: theme.colors.border }]}>
-                    <TouchableOpacity onPress={handleLeave}>
-                        <Ionicons name="close" size={24} color={theme.colors.text} />
-                    </TouchableOpacity>
+                <SafeAreaView style={{ backgroundColor: surface }}>
+                    <View style={[styles.chatHeader, { borderBottomColor: theme.colors.border }]}>
+                        <TouchableOpacity onPress={handleLeave} hitSlop={12}>
+                            <Ionicons name="close" size={24} color={theme.colors.text} />
+                        </TouchableOpacity>
 
-                    <View style={styles.chatHeaderCenter}>
-                        <View style={[styles.chatAvatar, { backgroundColor: '#FF6B35' }]}>
-                            <Text style={styles.chatAvatarText}>{initial}</Text>
+                        <View style={styles.chatHeaderCenter}>
+                            <View style={[styles.chatAvatar, { backgroundColor: ACCENT }]}>
+                                <Text style={styles.chatAvatarText}>{initial}</Text>
+                            </View>
+                            <View>
+                                <Text style={[styles.chatPartnerName, { color: theme.colors.text }]}>
+                                    @{partner?.username || 'someone'}
+                                </Text>
+                                <Text style={[styles.chatPartnerSub, { color: theme.colors.textSecondary }]}>
+                                    Anonymous chat
+                                </Text>
+                            </View>
                         </View>
-                        <Text style={[styles.chatPartnerName, { color: theme.colors.text }]}>
-                            @{partner?.username || 'someone'}
-                        </Text>
-                    </View>
 
-                    <View style={[styles.timerBadge, {
-                        backgroundColor: timeLeft < 30 ? 'rgba(255,0,0,0.15)' : 'rgba(255,107,53,0.15)'
-                    }]}>
-                        <Ionicons name="time" size={14} color={timeLeft < 30 ? '#FF0000' : '#FF6B35'} />
-                        <Text style={[styles.timerText, {
-                            color: timeLeft < 30 ? '#FF0000' : '#FF6B35'
-                        }]}>
+                        <Text style={[styles.timerText, { color: lowTime ? '#FF3B30' : theme.colors.text }]}>
                             {formatTime(timeLeft)}
                         </Text>
                     </View>
-                </View>
 
-                {/* Icebreaker */}
+                    <View style={[styles.progressTrack, { backgroundColor: theme.colors.border }]}>
+                        <View
+                            style={[
+                                styles.progressFill,
+                                { width: `${progress * 100}%`, backgroundColor: lowTime ? '#FF3B30' : ACCENT }
+                            ]}
+                        />
+                    </View>
+                </SafeAreaView>
+
                 {icebreaker && messages.length < 3 && (
-                    <View style={[styles.icebreakerCard, { backgroundColor: isDark ? '#2C2C2E' : '#FFF5F0' }]}>
+                    <View style={[styles.icebreakerCard, { backgroundColor: subtle, borderColor: theme.colors.border }]}>
+                        <Ionicons name="bulb-outline" size={16} color={ACCENT} />
                         <Text style={[styles.icebreakerText, { color: theme.colors.text }]}>
-                            💡 {icebreaker}
+                            {icebreaker}
                         </Text>
                     </View>
                 )}
 
-                {/* Messages */}
                 <FlatList
                     ref={flatListRef}
                     data={messages}
                     keyExtractor={(_, i) => i.toString()}
                     contentContainerStyle={styles.messagesList}
-                    onContentSizeChange={() => flatListRef.current?.scrollToEnd()}
+                    onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
                     renderItem={({ item }) => {
                         const isMe = item.sender?._id === 'me' || item.sender === 'me';
                         return (
                             <View style={[styles.msgRow, isMe && styles.msgRowMe]}>
-                                <View style={[
-                                    styles.msgBubble,
-                                    isMe ? styles.msgBubbleMe : [styles.msgBubbleOther, { backgroundColor: isDark ? '#2C2C2E' : '#F0F0F5' }]
-                                ]}>
+                                <View
+                                    style={[
+                                        styles.msgBubble,
+                                        isMe
+                                            ? { backgroundColor: ACCENT, borderBottomRightRadius: 4 }
+                                            : { backgroundColor: subtle, borderBottomLeftRadius: 4 }
+                                    ]}
+                                >
                                     <Text style={[styles.msgText, { color: isMe ? '#FFF' : theme.colors.text }]}>
                                         {item.text}
                                     </Text>
@@ -341,192 +357,239 @@ const RouletteScreen = ({ navigation }) => {
                     ListEmptyComponent={
                         <View style={styles.emptyChat}>
                             <Text style={[styles.emptyChatText, { color: theme.colors.textSecondary }]}>
-                                Say hi! You have {formatTime(timeLeft)} ⏱️
+                                Say hi. The clock is ticking.
                             </Text>
                         </View>
                     }
                 />
 
-                {/* Decide overlay */}
                 {isDeciding && (
-                    <View style={[styles.decideOverlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : 'rgba(255,255,255,0.95)' }]}>
-                        <Text style={[styles.decideTitle, { color: theme.colors.text }]}>
-                            ⏰ Time's up!
-                        </Text>
+                    <View style={[styles.decideOverlay, { backgroundColor: isDark ? 'rgba(0,0,0,0.92)' : 'rgba(255,255,255,0.96)' }]}>
+                        <Text style={[styles.decideTitle, { color: theme.colors.text }]}>Time's up</Text>
                         <Text style={[styles.decideSub, { color: theme.colors.textSecondary }]}>
                             Did you vibe with @{partner?.username}?
                         </Text>
 
                         <View style={styles.decideButtons}>
                             <TouchableOpacity
-                                style={[styles.decideBtn, styles.decideBtnConnect]}
-                                onPress={() => handleDecision('connect')}
+                                style={[styles.decideBtn, { borderColor: theme.colors.border, backgroundColor: subtle }]}
+                                onPress={() => handleDecision('pass')}
+                                activeOpacity={0.85}
                             >
-                                <Ionicons name="heart" size={24} color="#FFF" />
-                                <Text style={styles.decideBtnText}>Connect</Text>
+                                <Ionicons name="close" size={20} color={theme.colors.text} />
+                                <Text style={[styles.decideBtnText, { color: theme.colors.text }]}>Pass</Text>
                             </TouchableOpacity>
 
                             <TouchableOpacity
-                                style={[styles.decideBtn, styles.decideBtnPass]}
-                                onPress={() => handleDecision('pass')}
+                                style={[styles.decideBtn, { backgroundColor: ACCENT, borderColor: ACCENT }]}
+                                onPress={() => handleDecision('connect')}
+                                activeOpacity={0.85}
                             >
-                                <Ionicons name="close" size={24} color="#FFF" />
-                                <Text style={styles.decideBtnText}>Pass</Text>
+                                <Ionicons name="heart" size={20} color="#FFF" />
+                                <Text style={[styles.decideBtnText, { color: '#FFF' }]}>Connect</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 )}
 
-                {/* Input */}
                 {!isDeciding && (
-                    <View style={[styles.inputBar, { backgroundColor: isDark ? '#1C1C1E' : '#FFF', borderTopColor: theme.colors.border }]}>
-                        <TextInput
-                            style={[styles.input, { color: theme.colors.text, backgroundColor: isDark ? '#2C2C2E' : '#F0F0F5' }]}
-                            placeholder="Type a message..."
-                            placeholderTextColor={theme.colors.textSecondary}
-                            value={messageText}
-                            onChangeText={setMessageText}
-                            onSubmitEditing={handleSend}
-                            returnKeyType="send"
-                        />
-                        <TouchableOpacity style={styles.sendBtn} onPress={handleSend}>
-                            <Ionicons name="send" size={20} color="#FFF" />
-                        </TouchableOpacity>
-                    </View>
+                    <SafeAreaView style={{ backgroundColor: surface }}>
+                        <View style={[styles.inputBar, { borderTopColor: theme.colors.border }]}>
+                            <TextInput
+                                style={[styles.input, { color: theme.colors.text, backgroundColor: subtle }]}
+                                placeholder="Message"
+                                placeholderTextColor={theme.colors.textSecondary}
+                                value={messageText}
+                                onChangeText={setMessageText}
+                                onSubmitEditing={handleSend}
+                                returnKeyType="send"
+                            />
+                            <TouchableOpacity
+                                style={[styles.sendBtn, { backgroundColor: messageText.trim() ? ACCENT : subtle }]}
+                                onPress={handleSend}
+                                disabled={!messageText.trim()}
+                            >
+                                <Ionicons
+                                    name="arrow-up"
+                                    size={20}
+                                    color={messageText.trim() ? '#FFF' : theme.colors.textSecondary}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    </SafeAreaView>
                 )}
             </KeyboardAvoidingView>
         );
     }
 
-    // ═══════ RESULT ═══════
+    // ───────── RESULT ─────────
     if (phase === 'result') {
         const isMutualConnect = outcome === 'mutual_connect';
 
         return (
-            <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-                <StatusBar barStyle="light-content" />
-                <LinearGradient
-                    colors={isMutualConnect
-                        ? ['#4CAF50', '#2196F3', isDark ? '#000' : '#1A1A2E']
-                        : ['#333', '#1A1A2E', isDark ? '#000' : '#1A1A2E']}
-                    style={styles.fullScreen}
-                >
-                    <Text style={styles.resultEmoji}>
-                        {isMutualConnect ? '🎉' : '👋'}
+            <SafeAreaView style={[styles.container, { backgroundColor: bg }]}>
+                <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} backgroundColor={bg} />
+
+                <View style={styles.idleBody}>
+                    <View style={[styles.iconCircle, { backgroundColor: isMutualConnect ? ACCENT : subtle }]}>
+                        <Ionicons
+                            name={isMutualConnect ? 'heart' : 'close'}
+                            size={40}
+                            color={isMutualConnect ? '#FFF' : theme.colors.textSecondary}
+                        />
+                    </View>
+
+                    <Text style={[styles.title, { color: theme.colors.text }]}>
+                        {isMutualConnect ? "It's a match" : 'Not this time'}
                     </Text>
-                    <Text style={styles.resultTitle}>
-                        {isMutualConnect ? "It's a Match!" : "Maybe Next Time"}
-                    </Text>
-                    <Text style={styles.resultSub}>
+                    <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
                         {isMutualConnect
-                            ? `You and @${partner?.username} are now connected!`
-                            : "Keep spinning — your perfect match is out there!"}
+                            ? `You and @${partner?.username} can now chat.`
+                            : 'Try again — your match is out there.'}
                     </Text>
 
-                    <View style={styles.resultButtons}>
+                    <View style={{ width: '100%', alignItems: 'center', marginTop: 32 }}>
                         {isMutualConnect && (
                             <TouchableOpacity
-                                style={styles.resultBtn}
+                                style={[styles.primaryBtn, { backgroundColor: ACCENT }]}
                                 onPress={() => {
                                     resetState();
                                     navigation.navigate('ChatScreen', { recipientId: partner?._id });
                                 }}
+                                activeOpacity={0.85}
                             >
-                                <Text style={styles.resultBtnText}>💬 Start Chatting</Text>
+                                <Text style={styles.primaryBtnText}>Open chat</Text>
                             </TouchableOpacity>
                         )}
 
                         <TouchableOpacity
-                            style={[styles.resultBtn, { backgroundColor: 'rgba(255,255,255,0.2)' }]}
-                            onPress={() => {
-                                resetState();
-                                handleJoin();
-                            }}
+                            style={[
+                                styles.secondaryBtn,
+                                { borderColor: theme.colors.border, marginTop: isMutualConnect ? 12 : 0 }
+                            ]}
+                            onPress={() => { resetState(); handleJoin(); }}
+                            activeOpacity={0.85}
                         >
-                            <Text style={styles.resultBtnText}>🎲 Spin Again</Text>
+                            <Text style={[styles.secondaryBtnText, { color: theme.colors.text }]}>Spin again</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity onPress={resetState}>
-                            <Text style={[styles.resultDone, { marginTop: 20 }]}>Done</Text>
+                        <TouchableOpacity onPress={resetState} style={{ marginTop: 20 }} hitSlop={10}>
+                            <Text style={[styles.ghostBtnText, { color: theme.colors.textSecondary }]}>Done</Text>
                         </TouchableOpacity>
                     </View>
-                </LinearGradient>
-            </View>
+                </View>
+            </SafeAreaView>
         );
     }
 
     return null;
 };
 
-// =========================================================
-//  STYLES
-// =========================================================
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    fullScreen: {
+
+    topBar: {
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 4
+    },
+
+    idleBody: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingHorizontal: 30
+        paddingHorizontal: 32,
+        paddingBottom: 60
     },
 
-    // Back
-    backBtn: {
-        position: 'absolute',
-        top: 50,
-        left: 16,
-        width: 40,
-        height: 40,
+    iconCircle: {
+        width: 96,
+        height: 96,
+        borderRadius: 48,
         justifyContent: 'center',
         alignItems: 'center'
     },
 
-    // Idle
-    idleEmoji: { fontSize: 70, marginBottom: 20 },
-    idleTitle: { fontSize: 32, fontWeight: '900', color: '#FFF' },
-    idleDesc: {
+    pulseWrap: {
+        width: 96,
+        height: 96,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    pulseRing: {
+        position: 'absolute',
+        width: 96,
+        height: 96,
+        borderRadius: 48,
+        borderWidth: 2
+    },
+
+    title: {
+        fontSize: 28,
+        fontWeight: '700',
+        marginTop: 24,
+        letterSpacing: -0.5
+    },
+    subtitle: {
         fontSize: 15,
-        color: 'rgba(255,255,255,0.7)',
         textAlign: 'center',
-        marginTop: 12,
+        marginTop: 8,
         lineHeight: 22
     },
-    spinBtn: { marginTop: 30, borderRadius: 30, overflow: 'hidden' },
-    spinBtnGradient: { paddingHorizontal: 36, paddingVertical: 16, borderRadius: 30 },
-    spinBtnText: { fontSize: 18, fontWeight: '800', color: '#FF6B35' },
-    rulesRow: { flexDirection: 'row', marginTop: 40, gap: 20 },
-    ruleItem: { alignItems: 'center', gap: 4 },
-    ruleIcon: { fontSize: 22 },
-    ruleText: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600' },
 
-    // Searching
-    searchEmoji: { fontSize: 80, marginBottom: 24 },
-    searchTitle: { fontSize: 24, fontWeight: '800', color: '#FFF' },
-    searchSub: { fontSize: 14, color: 'rgba(255,255,255,0.6)', marginTop: 8 },
-    cancelBtn: {
-        marginTop: 40,
-        paddingHorizontal: 24,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.3)'
+    primaryBtn: {
+        marginTop: 32,
+        paddingHorizontal: 48,
+        paddingVertical: 14,
+        borderRadius: 28,
+        minWidth: 200,
+        alignItems: 'center'
     },
-    cancelText: { color: '#FFF', fontSize: 14, fontWeight: '600' },
+    primaryBtnText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '600',
+        letterSpacing: 0.2
+    },
 
-    // Chat header
+    secondaryBtn: {
+        paddingHorizontal: 48,
+        paddingVertical: 14,
+        borderRadius: 28,
+        minWidth: 200,
+        alignItems: 'center',
+        borderWidth: 1
+    },
+    secondaryBtnText: { fontSize: 16, fontWeight: '600' },
+
+    ghostBtn: { marginTop: 32, paddingVertical: 8, paddingHorizontal: 16 },
+    ghostBtnText: { fontSize: 15, fontWeight: '500' },
+
+    metaRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 40,
+        gap: 12
+    },
+    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    metaText: { fontSize: 13, fontWeight: '500' },
+    metaDot: { width: 3, height: 3, borderRadius: 1.5 },
+
+    // Chat
     chatHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 50,
-        paddingBottom: 12,
         paddingHorizontal: 16,
-        borderBottomWidth: 1
+        paddingVertical: 12,
+        borderBottomWidth: StyleSheet.hairlineWidth
     },
     chatHeaderCenter: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 10
+        gap: 10,
+        marginLeft: 12
     },
     chatAvatar: {
         width: 36,
@@ -535,77 +598,87 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center'
     },
-    chatAvatarText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-    chatPartnerName: { fontSize: 16, fontWeight: '700' },
-    timerBadge: {
+    chatAvatarText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+    chatPartnerName: { fontSize: 15, fontWeight: '600' },
+    chatPartnerSub: { fontSize: 12, marginTop: 1 },
+    timerText: { fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+
+    progressTrack: { height: 2, width: '100%' },
+    progressFill: { height: 2 },
+
+    icebreakerCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-        gap: 4
-    },
-    timerText: { fontSize: 14, fontWeight: '800' },
-
-    // Icebreaker
-    icebreakerCard: {
+        gap: 8,
         marginHorizontal: 16,
-        marginTop: 8,
-        padding: 12,
-        borderRadius: 12
+        marginTop: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth
     },
-    icebreakerText: { fontSize: 14, textAlign: 'center' },
+    icebreakerText: { flex: 1, fontSize: 13, lineHeight: 18 },
 
-    // Messages
-    messagesList: { padding: 16, paddingBottom: 80 },
-    msgRow: { marginBottom: 8 },
+    messagesList: { padding: 16, paddingBottom: 24, flexGrow: 1 },
+    msgRow: { marginBottom: 6 },
     msgRowMe: { alignItems: 'flex-end' },
-    msgBubble: { maxWidth: '80%', padding: 12, borderRadius: 18 },
-    msgBubbleMe: { backgroundColor: '#FF6B35', borderBottomRightRadius: 4 },
-    msgBubbleOther: { borderBottomLeftRadius: 4 },
+    msgBubble: {
+        maxWidth: '78%',
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 18
+    },
     msgText: { fontSize: 15, lineHeight: 20 },
 
-    // Empty chat
-    emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 60 },
-    emptyChatText: { fontSize: 15 },
+    emptyChat: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
+    emptyChatText: { fontSize: 14 },
 
-    // Decide
     decideOverlay: {
         ...StyleSheet.absoluteFillObject,
         justifyContent: 'center',
         alignItems: 'center',
+        paddingHorizontal: 32,
         zIndex: 100
     },
-    decideTitle: { fontSize: 28, fontWeight: '900' },
-    decideSub: { fontSize: 16, marginTop: 8 },
-    decideButtons: { flexDirection: 'row', marginTop: 30, gap: 16 },
+    decideTitle: { fontSize: 26, fontWeight: '700', letterSpacing: -0.5 },
+    decideSub: { fontSize: 15, marginTop: 8, textAlign: 'center' },
+    decideButtons: { flexDirection: 'row', marginTop: 32, gap: 12 },
     decideBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 28,
-        paddingVertical: 16,
-        borderRadius: 30,
-        gap: 8
-    },
-    decideBtnConnect: { backgroundColor: '#4CAF50' },
-    decideBtnPass: { backgroundColor: '#F44336' },
-    decideBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-
-    // Result
-    resultEmoji: { fontSize: 60, marginBottom: 20 },
-    resultTitle: { fontSize: 28, fontWeight: '900', color: '#FFF' },
-    resultSub: { fontSize: 15, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 8 },
-    resultButtons: { marginTop: 30, alignItems: 'center', gap: 12 },
-    resultBtn: {
-        backgroundColor: 'rgba(255,255,255,0.15)',
+        justifyContent: 'center',
         paddingHorizontal: 28,
         paddingVertical: 14,
-        borderRadius: 26,
-        minWidth: 200,
-        alignItems: 'center'
+        borderRadius: 28,
+        gap: 8,
+        borderWidth: 1,
+        minWidth: 130
     },
-    resultBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-    resultDone: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' }
+    decideBtnText: { fontSize: 15, fontWeight: '600' },
+
+    inputBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderTopWidth: StyleSheet.hairlineWidth
+    },
+    input: {
+        flex: 1,
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 22,
+        fontSize: 15,
+        maxHeight: 100
+    },
+    sendBtn: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        justifyContent: 'center',
+        alignItems: 'center'
+    }
 });
 
 export default RouletteScreen;

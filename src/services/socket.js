@@ -1,15 +1,41 @@
 import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 
 // ============================================================
-// SOCKET CONFIGURATION - Production Ready
+// SOCKET CONFIGURATION — reads from app.json > extra > socketUrl
 // ============================================================
-// Use the same Railway backend URL as api.js
-const SOCKET_URL = 'https://pulsebackendd-production-1d87.up.railway.app';
+const getExpoHost = () => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    Constants.manifest?.debuggerHost ||
+    Constants.manifest2?.extra?.expoClient?.hostUri;
+
+  return hostUri?.split(':')[0];
+};
+
+const resolveLocalUrl = (url) => {
+  const expoHost = getExpoHost();
+  if (!expoHost || expoHost === 'localhost' || expoHost === '127.0.0.1') {
+    return url;
+  }
+
+  return url
+    .replace('localhost', expoHost)
+    .replace('127.0.0.1', expoHost);
+};
+
+const SOCKET_URL = resolveLocalUrl(
+  Constants.expoConfig?.extra?.socketUrl || 'http://localhost:3000'
+);
 
 let socket = null;
 let pendingEmits = []; // Queue for messages sent while disconnected
 let connectionAttempts = 0;
+// Conversation rooms the user is currently in. Socket.IO rooms are tied to a
+// socket id and are LOST on reconnect, so we track them here and re-join on
+// every (re)connect — otherwise messaging silently dies after a network blip.
+let joinedConversations = new Set();
 
 class SocketService {
   connect(token) {
@@ -59,7 +85,9 @@ class SocketService {
       console.log('✅ Connected to Socket.io:', socket.id);
       console.log('📡 Transport:', socket.io.engine.transport.name);
 
-      // Process any queued messages
+      // Re-join conversation rooms (lost on every new socket id) then
+      // flush anything that was queued while offline.
+      this._rejoinConversations();
       this._processPendingEmits();
     });
 
@@ -108,6 +136,7 @@ class SocketService {
     // Reconnection events
     socket.on('reconnect', (attemptNumber) => {
       console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
+      this._rejoinConversations();
       this._processPendingEmits();
     });
 
@@ -136,7 +165,19 @@ class SocketService {
       socket = null;
       pendingEmits = [];
       connectionAttempts = 0;
+      joinedConversations.clear();
     }
+  }
+
+  // ✅ Re-join every active conversation room after a (re)connect.
+  _rejoinConversations() {
+    if (joinedConversations.size === 0) return;
+    console.log(`🚪 Re-joining ${joinedConversations.size} conversation room(s)...`);
+    joinedConversations.forEach((conversationId) => {
+      if (socket?.connected) {
+        socket.emit('join_conversation', { conversationId });
+      }
+    });
   }
 
   // ✅ Process queued messages after reconnection
@@ -206,10 +247,15 @@ class SocketService {
   }
 
   joinConversation(conversationId) {
+    if (!conversationId) return;
+    // Remember it so we can re-join automatically after any reconnect.
+    joinedConversations.add(conversationId);
     this.emit('join_conversation', { conversationId });
   }
 
   leaveConversation(conversationId) {
+    if (!conversationId) return;
+    joinedConversations.delete(conversationId);
     this.emit('leave_conversation', { conversationId });
   }
 

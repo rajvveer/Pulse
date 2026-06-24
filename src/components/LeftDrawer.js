@@ -164,8 +164,13 @@ const LeftDrawer = ({ isOpen, onClose, currentVibe, onVibeChange }) => {
     const handleNavigate = (screen) => {
         onClose();
         setTimeout(() => {
+            // Profile and Settings live inside the Profile tab's stack, so they
+            // must be reached through the nested Main > Profile route. The other
+            // feature screens are registered on the root navigator directly.
             if (screen === 'Profile') {
                 navigation.navigate('Main', { screen: 'Profile', params: { screen: 'ProfileMain' } });
+            } else if (screen === 'Settings') {
+                navigation.navigate('Main', { screen: 'Profile', params: { screen: 'Settings' } });
             } else {
                 navigation.navigate(screen);
             }

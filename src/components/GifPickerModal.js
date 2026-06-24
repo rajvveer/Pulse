@@ -28,23 +28,22 @@ const GifPickerModal = ({ visible, onClose, onSelectGif }) => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      loadGifs();
-    }
+    if (!visible) return;
+    // Debounce so we don't fire a Tenor request on every keystroke.
+    const handle = setTimeout(loadGifs, searchTerm.trim() ? 350 : 0);
+    return () => clearTimeout(handle);
   }, [visible, searchTerm]);
 
   const loadGifs = async () => {
     setLoading(true);
-    
-    if (searchTerm.trim()) {
-      const results = await gifService.searchGifs(searchTerm, 20);
+    try {
+      const results = searchTerm.trim()
+        ? await gifService.searchGifs(searchTerm, 20)
+        : await gifService.getTrendingGifs(20);
       setGifs(results);
-    } else {
-      const results = await gifService.getTrendingGifs(20);
-      setGifs(results);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const handleGifSelect = (gif) => {

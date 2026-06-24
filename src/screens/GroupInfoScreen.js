@@ -248,7 +248,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
           onPress: async () => {
             try {
               await api.delete(`/groups/${groupId}`);
-              navigation.navigate('ChatListScreen');
+              navigation.navigate('Main', { screen: 'Chat' });
               Alert.alert('Success', 'Group deleted');
             } catch (error) {
               console.error('❌ Delete group error:', error);

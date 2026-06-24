@@ -9,32 +9,42 @@ import {
   Alert,
   ActivityIndicator,
   Share,
-  Clipboard,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
 import { useDispatch } from 'react-redux';
-import { logout } from '../../redux/slices/authSlice';
+import { logoutAsync } from '../../redux/slices/authSlice';
 import api from '../../services/api';
+import logger from '../../utils/logger';
 
-const SettingItem = ({ icon, label, value, onPress, isSwitch, theme, isDestructive }) => (
+const DESTRUCTIVE = '#FF3B30';
+const PRIVACY_POLICY_URL = 'https://getpulse.app/privacy';
+const TERMS_URL = 'https://getpulse.app/terms';
+
+const SettingItem = ({ icon, label, value, onPress, isSwitch, theme, isDestructive, last }) => (
   <TouchableOpacity
-    style={[styles.settingItem, { borderBottomColor: theme.colors.border }]}
+    style={[
+      styles.settingItem,
+      { borderBottomColor: theme.colors.separator, borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth },
+    ]}
     onPress={onPress}
     disabled={isSwitch}
     activeOpacity={0.7}
   >
     <View style={styles.settingLeft}>
-      <View style={[styles.iconContainer, { backgroundColor: isDestructive ? '#FF3B3010' : theme.colors.primary + '15' }]}>
-        <Ionicons
-          name={icon}
-          size={20}
-          color={isDestructive ? '#FF3B30' : theme.colors.primary}
-        />
+      <View
+        style={[
+          styles.iconContainer,
+          { backgroundColor: isDestructive ? theme.colors.accentMuted : theme.colors.surfaceAlt },
+        ]}
+      >
+        <Ionicons name={icon} size={19} color={isDestructive ? theme.colors.error : theme.colors.text} />
       </View>
-      <Text style={[styles.settingLabel, { color: isDestructive ? '#FF3B30' : theme.colors.text }]}>
+      <Text style={[styles.settingLabel, { color: isDestructive ? theme.colors.error : theme.colors.text }]}>
         {label}
       </Text>
     </View>
@@ -42,49 +52,42 @@ const SettingItem = ({ icon, label, value, onPress, isSwitch, theme, isDestructi
       <Switch
         value={value}
         onValueChange={onPress}
-        trackColor={{ false: theme.colors.border, true: theme.colors.primary + '50' }}
-        thumbColor={value ? theme.colors.primary : '#f4f3f4'}
+        trackColor={{ false: theme.colors.borderStrong, true: theme.colors.primary }}
+        thumbColor={'#FFFFFF'}
+        ios_backgroundColor={theme.colors.borderStrong}
       />
     ) : (
       <View style={styles.settingRight}>
-        {value && <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{value}</Text>}
-        <Ionicons name="chevron-forward" size={20} color={theme.colors.textSecondary} />
+        {value ? (
+          <Text style={[styles.settingValue, { color: theme.colors.textSecondary }]}>{value}</Text>
+        ) : null}
+        <Ionicons name="chevron-forward" size={18} color={theme.colors.textTertiary} />
       </View>
     )}
   </TouchableOpacity>
 );
 
 const SectionHeader = ({ title, theme }) => (
-  <Text style={[styles.sectionHeader, { color: theme.colors.textSecondary }]}>{title}</Text>
+  <Text style={[styles.sectionHeader, { color: theme.colors.textTertiary }]}>{title}</Text>
 );
 
 const SettingsScreen = ({ navigation }) => {
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark } = useTheme();
   const theme = getTheme(isDark);
   const dispatch = useDispatch();
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [settings, setSettings] = useState({
     pushNotifications: true,
-    emailNotifications: true,
-    notifyOnLike: true,
-    notifyOnComment: true,
-    notifyOnFollow: true,
-    notifyOnMention: true,
-    isPrivate: false,
-    showOnlineStatus: true,
-    allowMessages: 'everyone',
-    theme: 'auto',
+    shareExactLocation: false,
   });
 
-  // Referral state
   const [referral, setReferral] = useState({
     code: null,
-    shareUrl: '',
     shareMessage: '',
     count: 0,
-    loading: false,
+    loading: true,
   });
 
   useEffect(() => {
@@ -92,111 +95,108 @@ const SettingsScreen = ({ navigation }) => {
     fetchReferralCode();
   }, []);
 
-  const fetchReferralCode = async () => {
+  const fetchSettings = async () => {
     try {
-      setReferral(prev => ({ ...prev, loading: true }));
-      const res = await api.get('/referral/my-code');
-      if (res.data?.data) {
-        const d = res.data.data;
-        setReferral({
-          code: d.referralCode,
-          shareUrl: d.shareUrl,
-          shareMessage: d.shareMessage,
-          count: d.referralCount || 0,
-          loading: false,
+      const res = await api.get('/users/me');
+      const user = res.data?.data;
+      if (user) {
+        setSettings({
+          pushNotifications: user.settings?.pushNotifications ?? true,
+          shareExactLocation: user.settings?.shareExactLocation ?? false,
         });
       }
     } catch (error) {
-      console.error('Fetch referral error:', error);
-      setReferral(prev => ({ ...prev, loading: false }));
+      logger.error('Fetch settings error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchReferralCode = async () => {
+    try {
+      const res = await api.get('/referral/my-code');
+      const d = res.data?.data;
+      if (d) {
+        setReferral({
+          code: d.referralCode,
+          shareMessage: d.shareMessage || '',
+          count: d.referralCount || 0,
+          loading: false,
+        });
+      } else {
+        setReferral((prev) => ({ ...prev, loading: false }));
+      }
+    } catch (error) {
+      logger.error('Fetch referral error:', error);
+      setReferral((prev) => ({ ...prev, loading: false }));
+    }
+  };
+
+  const updateSetting = async (key, value) => {
+    const previous = settings[key];
+    setSettings((prev) => ({ ...prev, [key]: value }));
+
+    try {
+      await api.patch('/users/me', { [`settings.${key}`]: value });
+    } catch (error) {
+      logger.error('Update setting error:', error);
+      setSettings((prev) => ({ ...prev, [key]: previous })); // revert
+      Alert.alert('Error', 'Could not save that change. Please try again.');
     }
   };
 
   const handleShareReferral = async () => {
     try {
       await Share.share({
-        message: referral.shareMessage || `Join me on Pulse! Use code ${referral.code}`,
+        message: referral.shareMessage || `Join me on Pulse! Use my code ${referral.code}`,
       });
     } catch (error) {
-      console.error('Share error:', error);
+      logger.error('Share referral error:', error);
     }
   };
 
-  const handleCopyCode = () => {
-    if (referral.code) {
-      Clipboard.setString(referral.code);
-      Alert.alert('Copied!', 'Referral code copied to clipboard.');
-    }
+  const handleCopyCode = async () => {
+    if (!referral.code) return;
+    await Clipboard.setStringAsync(referral.code);
+    Alert.alert('Copied', 'Referral code copied to clipboard.');
   };
 
-  const fetchSettings = async () => {
+  const openLink = async (url) => {
     try {
-      const res = await api.get('/users/me');
-      if (res.data?.data) {
-        const user = res.data.data;
-        setSettings({
-          pushNotifications: user.settings?.pushNotifications ?? true,
-          emailNotifications: user.settings?.emailNotifications ?? true,
-          notifyOnLike: user.settings?.notifyOnLike ?? true,
-          notifyOnComment: user.settings?.notifyOnComment ?? true,
-          notifyOnFollow: user.settings?.notifyOnFollow ?? true,
-          notifyOnMention: user.settings?.notifyOnMention ?? true,
-          isPrivate: user.privacy?.isPrivate ?? false,
-          showOnlineStatus: user.privacy?.showOnlineStatus ?? true,
-          allowMessages: user.privacy?.allowMessages ?? 'everyone',
-          theme: user.settings?.theme ?? 'auto',
-        });
-      }
+      await Linking.openURL(url);
     } catch (error) {
-      console.error('Fetch settings error:', error);
-    } finally {
-      setLoading(false);
+      logger.error('Open link error:', error);
+      Alert.alert('Error', 'Could not open the link.');
     }
   };
 
-  const updateSetting = async (key, value) => {
-    const prevSettings = { ...settings };
-    setSettings(prev => ({ ...prev, [key]: value }));
-
+  const performDelete = async () => {
+    setDeleting(true);
     try {
-      // Determine if it's a privacy or settings field
-      const isPrivacy = ['isPrivate', 'showOnlineStatus', 'allowMessages'].includes(key);
-      const updatePath = isPrivacy ? `privacy.${key}` : `settings.${key}`;
-
-      await api.patch('/users/me', { [updatePath]: value });
+      await api.delete('/users/me');
+      // Account is gone — clear the session and drop back to the auth flow.
+      dispatch(logoutAsync());
     } catch (error) {
-      console.error('Update setting error:', error);
-      setSettings(prevSettings); // Revert on error
+      logger.error('Delete account error:', error);
+      setDeleting(false);
+      Alert.alert('Error', 'Could not delete your account. Please try again.');
     }
-  };
-
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: () => dispatch(logout()),
-        },
-      ]
-    );
   };
 
   const handleDeleteAccount = () => {
     Alert.alert(
       'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
+      'This permanently deactivates your account and removes your posts. This cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
-          onPress: () => {
-            Alert.alert('Coming Soon', 'Account deletion will be available in a future update.');
-          },
+          onPress: () =>
+            Alert.alert('Are you absolutely sure?', 'Your account and content will be gone for good.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Delete Forever', style: 'destructive', onPress: performDelete },
+            ]),
         },
       ]
     );
@@ -204,7 +204,10 @@ const SettingsScreen = ({ navigation }) => {
 
   if (loading) {
     return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+        edges={['bottom']}
+      >
         <View style={styles.loaderContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
@@ -213,12 +216,32 @@ const SettingsScreen = ({ navigation }) => {
   }
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['bottom']}>
+    <SafeAreaView
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      edges={['bottom']}
+    >
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Account */}
+        <SectionHeader title="ACCOUNT" theme={theme} />
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <SettingItem
+            icon="person-outline"
+            label="Edit Profile"
+            onPress={() => navigation.navigate('EditProfile')}
+            theme={theme}
+          />
+          <SettingItem
+            icon="key-outline"
+            label="Change Password"
+            onPress={() => navigation.navigate('ChangePassword')}
+            theme={theme}
+            last
+          />
+        </View>
 
         {/* Notifications */}
         <SectionHeader title="NOTIFICATIONS" theme={theme} />
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <SettingItem
             icon="notifications"
             label="Push Notifications"
@@ -226,278 +249,194 @@ const SettingsScreen = ({ navigation }) => {
             onPress={(val) => updateSetting('pushNotifications', val)}
             isSwitch
             theme={theme}
-          />
-          <SettingItem
-            icon="mail"
-            label="Email Notifications"
-            value={settings.emailNotifications}
-            onPress={(val) => updateSetting('emailNotifications', val)}
-            isSwitch
-            theme={theme}
-          />
-          <SettingItem
-            icon="heart"
-            label="Likes"
-            value={settings.notifyOnLike}
-            onPress={(val) => updateSetting('notifyOnLike', val)}
-            isSwitch
-            theme={theme}
-          />
-          <SettingItem
-            icon="chatbubble"
-            label="Comments"
-            value={settings.notifyOnComment}
-            onPress={(val) => updateSetting('notifyOnComment', val)}
-            isSwitch
-            theme={theme}
-          />
-          <SettingItem
-            icon="person-add"
-            label="New Followers"
-            value={settings.notifyOnFollow}
-            onPress={(val) => updateSetting('notifyOnFollow', val)}
-            isSwitch
-            theme={theme}
-          />
-          <SettingItem
-            icon="at"
-            label="Mentions"
-            value={settings.notifyOnMention}
-            onPress={(val) => updateSetting('notifyOnMention', val)}
-            isSwitch
-            theme={theme}
+            last
           />
         </View>
 
-        {/* Privacy */}
-        <SectionHeader title="PRIVACY" theme={theme} />
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
+        {/* Location */}
+        <SectionHeader title="LOCATION" theme={theme} />
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <SettingItem
-            icon="lock-closed"
-            label="Private Account"
-            value={settings.isPrivate}
-            onPress={(val) => updateSetting('isPrivate', val)}
+            icon="navigate"
+            label="Share Exact Location"
+            value={settings.shareExactLocation}
+            onPress={(val) => updateSetting('shareExactLocation', val)}
             isSwitch
             theme={theme}
-          />
-          <SettingItem
-            icon="ellipse"
-            label="Show Online Status"
-            value={settings.showOnlineStatus}
-            onPress={(val) => updateSetting('showOnlineStatus', val)}
-            isSwitch
-            theme={theme}
-          />
-          <SettingItem
-            icon="chatbubbles"
-            label="Who Can Message Me"
-            value={settings.allowMessages === 'everyone' ? 'Everyone' : settings.allowMessages === 'followers' ? 'Followers' : 'No One'}
-            onPress={() => navigation.navigate('Privacy')}
-            theme={theme}
-          />
-        </View>
-
-        {/* Appearance */}
-        <SectionHeader title="APPEARANCE" theme={theme} />
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <SettingItem
-            icon={isDark ? "moon" : "sunny"}
-            label="Dark Mode"
-            value={isDark}
-            onPress={() => toggleTheme()}
-            isSwitch
-            theme={theme}
+            last
           />
         </View>
 
         {/* Invite Friends */}
         <SectionHeader title="INVITE FRIENDS" theme={theme} />
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <View style={[styles.settingItem, { borderBottomColor: theme.colors.border }]}>
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '15' }]}>
-                  <Ionicons name="gift" size={20} color={theme.colors.primary} />
-                </View>
-                <Text style={[styles.settingLabel, { color: theme.colors.text }]}>Your Referral Code</Text>
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          <View style={styles.referralWrap}>
+            <View style={styles.referralHeader}>
+              <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '15' }]}>
+                <Ionicons name="gift" size={20} color={theme.colors.primary} />
               </View>
-
-              {referral.loading ? (
-                <ActivityIndicator size="small" color={theme.colors.primary} />
-              ) : referral.code ? (
-                <>
-                  <View style={{
-                    backgroundColor: theme.colors.primary + '12',
-                    borderRadius: 10,
-                    padding: 14,
-                    alignItems: 'center',
-                    marginBottom: 10,
-                    borderWidth: 1,
-                    borderColor: theme.colors.primary + '30',
-                  }}>
-                    <Text style={{
-                      fontSize: 22,
-                      fontWeight: '800',
-                      letterSpacing: 3,
-                      color: theme.colors.primary,
-                    }}>{referral.code}</Text>
-                  </View>
-
-                  <Text style={{ fontSize: 13, color: theme.colors.textSecondary, marginBottom: 12, textAlign: 'center' }}>
-                    {referral.count} {referral.count === 1 ? 'friend' : 'friends'} joined with your code
-                  </Text>
-
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TouchableOpacity
-                      onPress={handleShareReferral}
-                      activeOpacity={0.7}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        backgroundColor: theme.colors.primary,
-                        paddingVertical: 12,
-                        borderRadius: 10,
-                      }}
-                    >
-                      <Ionicons name="share-social" size={18} color="#fff" />
-                      <Text style={{ color: '#fff', fontWeight: '600', fontSize: 14 }}>Share</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      onPress={handleCopyCode}
-                      activeOpacity={0.7}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 8,
-                        backgroundColor: theme.colors.primary + '15',
-                        paddingVertical: 12,
-                        borderRadius: 10,
-                        borderWidth: 1,
-                        borderColor: theme.colors.primary + '30',
-                      }}
-                    >
-                      <Ionicons name="copy" size={18} color={theme.colors.primary} />
-                      <Text style={{ color: theme.colors.primary, fontWeight: '600', fontSize: 14 }}>Copy</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              ) : (
-                <Text style={{ fontSize: 13, color: theme.colors.textSecondary }}>
-                  Unable to load referral code
-                </Text>
-              )}
+              <Text style={[styles.settingLabel, { color: theme.colors.text }]}>
+                Your Referral Code
+              </Text>
             </View>
+
+            {referral.loading ? (
+              <ActivityIndicator size="small" color={theme.colors.primary} style={{ marginTop: 12 }} />
+            ) : referral.code ? (
+              <>
+                <View
+                  style={[
+                    styles.codeBox,
+                    { backgroundColor: theme.colors.primary + '12', borderColor: theme.colors.primary + '30' },
+                  ]}
+                >
+                  <Text style={[styles.codeText, { color: theme.colors.primary }]}>
+                    {referral.code}
+                  </Text>
+                </View>
+                <Text style={[styles.referralCount, { color: theme.colors.textSecondary }]}>
+                  {referral.count} {referral.count === 1 ? 'friend has' : 'friends have'} joined with
+                  your code
+                </Text>
+                <View style={styles.referralButtons}>
+                  <TouchableOpacity
+                    onPress={handleShareReferral}
+                    activeOpacity={0.7}
+                    style={[styles.referralBtn, { backgroundColor: theme.colors.primary }]}
+                  >
+                    <Ionicons name="share-social" size={18} color="#fff" />
+                    <Text style={styles.referralBtnText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleCopyCode}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.referralBtn,
+                      { backgroundColor: theme.colors.primary + '15', borderWidth: 1, borderColor: theme.colors.primary + '30' },
+                    ]}
+                  >
+                    <Ionicons name="copy" size={18} color={theme.colors.primary} />
+                    <Text style={[styles.referralBtnText, { color: theme.colors.primary }]}>Copy</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <Text style={[styles.referralCount, { color: theme.colors.textSecondary }]}>
+                Unable to load referral code.
+              </Text>
+            )}
           </View>
         </View>
 
-        {/* Account */}
-        <SectionHeader title="ACCOUNT" theme={theme} />
-        <View style={[styles.section, { backgroundColor: theme.colors.surface }]}>
-          <SettingItem
-            icon="key"
-            label="Change Password"
-            onPress={() => Alert.alert('Coming Soon', 'This feature will be available soon.')}
-            theme={theme}
-          />
+        {/* Support & About */}
+        <SectionHeader title="SUPPORT & ABOUT" theme={theme} />
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
           <SettingItem
             icon="information-circle"
-            label="About"
+            label="About Pulse"
             onPress={() => navigation.navigate('About')}
             theme={theme}
           />
           <SettingItem
-            icon="log-out"
-            label="Logout"
-            onPress={handleLogout}
+            icon="shield-checkmark"
+            label="Privacy Policy"
+            onPress={() => openLink(PRIVACY_POLICY_URL)}
             theme={theme}
-            isDestructive
           />
           <SettingItem
-            icon="trash"
-            label="Delete Account"
-            onPress={handleDeleteAccount}
+            icon="document-text"
+            label="Terms of Service"
+            onPress={() => openLink(TERMS_URL)}
             theme={theme}
-            isDestructive
+            last
           />
         </View>
 
-        <Text style={[styles.version, { color: theme.colors.textSecondary }]}>
-          Pulse v1.0.0
-        </Text>
+        {/* Danger zone */}
+        <SectionHeader title="ACCOUNT ACTIONS" theme={theme} />
+        <View style={[styles.section, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+          {deleting ? (
+            <View style={[styles.settingItem, { borderBottomWidth: 0 }]}>
+              <ActivityIndicator size="small" color={DESTRUCTIVE} />
+              <Text style={[styles.settingLabel, { color: DESTRUCTIVE, marginLeft: 12 }]}>
+                Deleting account...
+              </Text>
+            </View>
+          ) : (
+            <SettingItem
+              icon="trash"
+              label="Delete Account"
+              onPress={handleDeleteAccount}
+              theme={theme}
+              isDestructive
+              last
+            />
+          )}
+        </View>
+
+        <Text style={[styles.version, { color: theme.colors.textSecondary }]}>Pulse v1.0.0</Text>
       </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loaderContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
+  container: { flex: 1 },
+  loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  scrollContent: { paddingBottom: 40 },
   sectionHeader: {
     fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 0.5,
-    marginTop: 24,
-    marginBottom: 8,
-    marginHorizontal: 20,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginTop: 26,
+    marginBottom: 9,
+    marginHorizontal: 22,
   },
-  section: {
-    marginHorizontal: 16,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
+  section: { marginHorizontal: 16, borderRadius: 16, overflow: 'hidden', borderWidth: StyleSheet.hairlineWidth },
   settingItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
   },
-  settingLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
+  settingLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   iconContainer: {
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 11,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 13,
   },
-  settingLabel: {
-    fontSize: 15,
-    fontWeight: '500',
+  settingLabel: { fontSize: 15, fontWeight: '600' },
+  settingRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  settingValue: { fontSize: 14 },
+  referralWrap: { padding: 16 },
+  referralHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  codeBox: {
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginBottom: 10,
+    borderWidth: 1,
+    borderStyle: 'dashed',
   },
-  settingRight: {
+  codeText: { fontSize: 22, fontWeight: '800', letterSpacing: 4 },
+  referralCount: { fontSize: 13, marginBottom: 14, textAlign: 'center' },
+  referralButtons: { flexDirection: 'row', gap: 10 },
+  referralBtn: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
-  settingValue: {
-    fontSize: 14,
-  },
-  version: {
-    textAlign: 'center',
-    marginTop: 30,
-    fontSize: 13,
-  },
+  referralBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  version: { textAlign: 'center', marginTop: 30, fontSize: 13 },
 });
 
 export default SettingsScreen;

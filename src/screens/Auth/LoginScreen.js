@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginSuccess } from '../../redux/slices/authSlice';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
-import api from '../../services/api';
+import api, { API_URL } from '../../services/api';
 import { signInWithGoogle, getDeviceId } from '../../services/firebase';
 
 const { width } = Dimensions.get('window');
@@ -66,7 +66,8 @@ const checkNetworkConnectivity = async () => {
   // Test 2: Check if Railway backend is reachable
   let backendWorks = false;
   try {
-    const backendTest = await fetch('https://pulsebackendd-production-1d87.up.railway.app/api/v1/health', {
+    const backendBaseUrl = API_URL.replace(/\/api\/v1\/?$/, '');
+    const backendTest = await fetch(`${backendBaseUrl}/health`, {
       method: 'GET',
       cache: 'no-cache',
       headers: { 'Content-Type': 'application/json' },

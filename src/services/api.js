@@ -1,21 +1,47 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import socketService from './socket';
 
 // ============================================================
-// API CONFIGURATION
+// API CONFIGURATION — reads from app.json > extra > apiUrl
 // ============================================================
-// Primary: Railway backend (production)
-// Fallback: Your Vercel proxy (deploy pulse-proxy folder to Vercel)
-// const LOCAL_URL = 'http://192.168.1.5:3000/api/v1'; // For local WiFi testing only
-const PRIMARY_URL = 'https://pulsebackendd-production-1d87.up.railway.app/api/v1';
+const getExpoHost = () => {
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    Constants.manifest?.debuggerHost ||
+    Constants.manifest2?.extra?.expoClient?.hostUri;
 
-// TODO: After deploying proxy, update this URL:
-// const PROXY_URL = 'https://pulse-api-proxy.vercel.app/api/v1';
+  return hostUri?.split(':')[0];
+};
 
-let API_URL = PRIMARY_URL;
+const resolveLocalUrl = (url) => {
+  if (!__DEV__) return url;
 
-console.log('🌐 [API] Using URL:', API_URL);
+  const expoHost = getExpoHost();
+  if (!expoHost || expoHost === 'localhost' || expoHost === '127.0.0.1') {
+    return url;
+  }
+
+  return url
+    .replace('localhost', expoHost)
+    .replace('127.0.0.1', expoHost);
+};
+
+export const API_URL = resolveLocalUrl(
+  Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.4:3000/api/v1'
+);
+
+// Dev-only logger — no-op in production builds so we never leak
+// request/response data (including auth tokens) to device logs.
+const log = (...args) => {
+  if (__DEV__) console.log(...args);
+};
+const logError = (...args) => {
+  if (__DEV__) console.error(...args);
+};
+
+log('🌐 [API] Using URL:', API_URL);
 
 const api = axios.create({
   baseURL: API_URL,
@@ -64,7 +90,7 @@ const isNetworkError = (error) => {
 // ============================================================
 api.interceptors.request.use(
   async (config) => {
-    console.log('📤 [API] Request:', config.method?.toUpperCase(), config.url);
+    log('📤 [API] Request:', config.method?.toUpperCase(), config.url);
     const token = await AsyncStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -80,7 +106,7 @@ api.interceptors.request.use(
 // ============================================================
 api.interceptors.response.use(
   (response) => {
-    console.log('📥 [API] Response:', response.status, response.config.url);
+    log('📥 [API] Response:', response.status, response.config.url);
     return response;
   },
   async (error) => {
@@ -89,26 +115,26 @@ api.interceptors.response.use(
     // 🔄 NETWORK ERROR RETRY LOGIC
     if (isNetworkError(error) && originalRequest._retryCount < MAX_RETRIES) {
       originalRequest._retryCount += 1;
-      console.log(`🔄 [API] Network error, retry ${originalRequest._retryCount}/${MAX_RETRIES}...`);
+      log(`🔄 [API] Network error, retry ${originalRequest._retryCount}/${MAX_RETRIES}...`);
 
       const delay = RETRY_DELAY * Math.pow(2, originalRequest._retryCount - 1);
-      console.log(`⏳ [API] Waiting ${delay}ms...`);
+      log(`⏳ [API] Waiting ${delay}ms...`);
       await sleep(delay);
 
       return api(originalRequest);
     }
 
     if (isNetworkError(error)) {
-      console.error('❌ [API] All retries failed:', error.message);
+      logError('❌ [API] All retries failed:', error.message);
     }
 
     // IF 401 Unauthorized AND NOT ALREADY RETRIED
     if (error.response?.status === 401 && !originalRequest._retry) {
 
-      console.log('⚠️ [API] 401 Unauthorized detected. Starting refresh flow...');
+      log('⚠️ [API] 401 Unauthorized detected. Starting refresh flow...');
 
       if (isRefreshing) {
-        console.log('⏳ [API] Refresh already in progress, queuing request...');
+        log('⏳ [API] Refresh already in progress, queuing request...');
         return new Promise(function (resolve, reject) {
           failedQueue.push({ resolve, reject });
         })
@@ -126,17 +152,15 @@ api.interceptors.response.use(
         const refreshToken = await AsyncStorage.getItem('refreshToken');
 
         if (!refreshToken) {
-          console.error('❌ [API] No refresh token found in storage.');
+          logError('❌ [API] No refresh token found in storage.');
           throw new Error('No refresh token available');
         }
 
-        console.log('🔄 [API] Calling /auth/refresh-token...');
+        log('🔄 [API] Calling /auth/refresh-token...');
 
         const response = await axios.post(`${API_URL}/auth/refresh-token`, {
           refreshToken,
         });
-
-        console.log('📩 [API] Refresh Response Payload:', JSON.stringify(response.data, null, 2));
 
         const dataSource = response.data.data || response.data;
 
@@ -150,16 +174,16 @@ api.interceptors.response.use(
           dataSource.refreshToken;
 
         if (accessToken) {
-          console.log('✅ [API] NEW Access Token received!');
+          log('✅ [API] NEW Access Token received!');
         } else {
-          console.error('❌ [API] Critical: Access Token MISSING in response!');
+          logError('❌ [API] Critical: Access Token MISSING in response!');
           throw new Error("Backend didn't return access token");
         }
 
         if (newRefreshToken) {
-          console.log('✅ [API] NEW Refresh Token received (Rotating).');
+          log('✅ [API] NEW Refresh Token received (Rotating).');
         } else {
-          console.log('ℹ️ [API] No new Refresh Token sent (Reusing old one).');
+          log('ℹ️ [API] No new Refresh Token sent (Reusing old one).');
         }
 
         await AsyncStorage.setItem('accessToken', accessToken);
@@ -169,7 +193,7 @@ api.interceptors.response.use(
 
         processQueue(null, accessToken);
 
-        console.log('🚀 [API] Retrying original failed request...');
+        log('🚀 [API] Retrying original failed request...');
         originalRequest.headers.Authorization = `Bearer ${accessToken}`;
 
         // ✅ Also update socket token so it doesn't get auth errors
@@ -179,9 +203,19 @@ api.interceptors.response.use(
 
       } catch (refreshError) {
         processQueue(refreshError, null);
-        console.error('💀 [API] Session expired completely:', refreshError.message);
+        logError('💀 [API] Session expired completely:', refreshError.message);
 
         await AsyncStorage.multiRemove(['accessToken', 'refreshToken', 'user']);
+
+        // Force the app back to the auth flow. Lazy require avoids a
+        // circular import (store → postSlice → api).
+        try {
+          const { store } = require('../redux/store');
+          const { logoutAsync } = require('../redux/slices/authSlice');
+          store.dispatch(logoutAsync());
+        } catch (e) {
+          logError('❌ [API] Failed to dispatch logout:', e?.message);
+        }
 
         return Promise.reject(refreshError);
       } finally {

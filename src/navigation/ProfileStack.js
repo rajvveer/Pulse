@@ -7,6 +7,8 @@ import ProfileScreen from "../screens/Profile/ProfileScreen";
 import EditProfileScreen from "../screens/Profile/EditProfileScreen";
 import SettingsScreen from "../screens/Profile/SettingsScreen";
 import PrivacyScreen from "../screens/Profile/PrivacyScreen";
+import ChangePasswordScreen from "../screens/Profile/ChangePasswordScreen";
+import BlockedAccountsScreen from "../screens/Profile/BlockedAccountsScreen";
 import MyPostsScreen from "../screens/Profile/MyPostsScreen";
 import AboutScreen from "../screens/Profile/AboutScreen";
 import NotificationsScreen from "../screens/Profile/NotificationsScreen";
@@ -66,9 +68,19 @@ export const ProfileStack = () => {
         options={{ title: "Privacy & Safety" }}
       />
       <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ title: "Change Password" }}
+      />
+      <Stack.Screen
+        name="BlockedAccounts"
+        component={BlockedAccountsScreen}
+        options={{ title: "Blocked Accounts" }}
+      />
+      <Stack.Screen
         name="MyPosts"
         component={MyPostsScreen}
-        options={{ title: "My Posts" }}
+        options={{ title: "Posts" }}
       />
       <Stack.Screen
         name="Notifications"

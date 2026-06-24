@@ -18,15 +18,13 @@ import { getTheme } from '../styles/theme';
 import { fetchGlobalPosts, fetchFollowingPosts, likePostOptimistic } from '../redux/slices/postSlice';
 import PostCard from '../components/PostCard';
 import LeftDrawer from '../components/LeftDrawer';
+import SnapRail from '../components/SnapRail';
 import api from '../services/api';
+import { getStoryRail } from '../services/snapService';
+import logger from '../utils/logger';
 
 const VIBE_LABELS = {
-  auto: 'Auto',
-  chill: 'Chill',
-  hype: 'Hype',
-  sad: 'Feels',
-  funny: 'Comedy',
-  creative: 'Creative',
+  auto: 'Auto', chill: 'Chill', hype: 'Hype', sad: 'Feels', funny: 'Comedy', creative: 'Creative',
 };
 
 const FeedScreen = ({ navigation }) => {
@@ -34,93 +32,79 @@ const FeedScreen = ({ navigation }) => {
   const forYouListRef = useRef(null);
   const followingListRef = useRef(null);
 
-  // Tab State
   const [activeTab, setActiveTab] = useState('forYou');
   const tabIndicatorAnim = useRef(new Animated.Value(0)).current;
 
-  // Drawer & Vibe State
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentVibe, setCurrentVibe] = useState('auto');
   const [notificationCount, setNotificationCount] = useState(0);
 
-  // Selectors — For You
-  const { location, city, region } = useSelector(state => state.ui);
-  const { posts, isLoading, isError, message, page, hasMore } = useSelector(state => state.posts);
+  const [storyRings, setStoryRings] = useState([]);
+  const [railLoading, setRailLoading] = useState(false);
 
-  // Selectors — Following
+  const { posts, isLoading, isError, message, page, hasMore } = useSelector(state => state.posts);
   const {
     followingPosts, followingIsLoading, followingIsError,
-    followingMessage, followingPage, followingHasMore
+    followingMessage, followingPage, followingHasMore,
   } = useSelector(state => state.posts);
 
-  // Custom Hooks
   const { requestLocation } = useLocation();
   const { isDark } = useTheme();
   const theme = getTheme(isDark);
 
-  // Initial Load
   useEffect(() => {
     requestLocation();
     if (posts.length === 0) loadForYou(1);
+    loadStoryRail();
   }, []);
 
-  // Load following feed when tab switches to it for the first time
   useEffect(() => {
-    if (activeTab === 'following' && followingPosts.length === 0) {
-      loadFollowing(1);
-    }
+    if (activeTab === 'following' && followingPosts.length === 0) loadFollowing(1);
   }, [activeTab]);
 
-  // Animate tab indicator
   useEffect(() => {
     Animated.spring(tabIndicatorAnim, {
       toValue: activeTab === 'forYou' ? 0 : 1,
-      useNativeDriver: false,
-      tension: 300,
-      friction: 20,
+      useNativeDriver: false, tension: 280, friction: 22,
     }).start();
   }, [activeTab]);
 
-  // Fetch notification count on focus
   const fetchNotificationCount = useCallback(async () => {
     try {
       const res = await api.get('/notifications/count');
       setNotificationCount(res.data?.data?.total || 0);
-    } catch (e) {
-      // Silently fail
-    }
+    } catch (e) { /* silent */ }
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchNotificationCount();
-    }, [fetchNotificationCount])
-  );
+  const loadStoryRail = useCallback(async () => {
+    setRailLoading(true);
+    try {
+      const rings = await getStoryRail();
+      setStoryRings(rings);
+    } catch (e) { /* silent */ } finally { setRailLoading(false); }
+  }, []);
 
-  // Feed loaders
-  const loadForYou = useCallback((pageToLoad = 1) => {
-    dispatch(fetchGlobalPosts({ page: pageToLoad, vibe: currentVibe }));
+  useFocusEffect(useCallback(() => {
+    fetchNotificationCount();
+    loadStoryRail();
+  }, [fetchNotificationCount, loadStoryRail]));
+
+  const loadForYou = useCallback((p = 1) => {
+    dispatch(fetchGlobalPosts({ page: p, vibe: currentVibe }));
   }, [dispatch, currentVibe]);
 
-  const loadFollowing = useCallback((pageToLoad = 1) => {
-    dispatch(fetchFollowingPosts({ page: pageToLoad }));
+  const loadFollowing = useCallback((p = 1) => {
+    dispatch(fetchFollowingPosts({ page: p }));
   }, [dispatch]);
 
-  // Refresh handlers
   const handleRefresh = useCallback(() => {
-    if (activeTab === 'forYou') {
-      loadForYou(1);
-    } else {
-      loadFollowing(1);
-    }
-  }, [activeTab, loadForYou, loadFollowing]);
+    loadStoryRail();
+    if (activeTab === 'forYou') loadForYou(1); else loadFollowing(1);
+  }, [activeTab, loadForYou, loadFollowing, loadStoryRail]);
 
   const handleLoadMore = useCallback(() => {
-    if (activeTab === 'forYou') {
-      if (!isLoading && hasMore) loadForYou(page + 1);
-    } else {
-      if (!followingIsLoading && followingHasMore) loadFollowing(followingPage + 1);
-    }
+    if (activeTab === 'forYou') { if (!isLoading && hasMore) loadForYou(page + 1); }
+    else { if (!followingIsLoading && followingHasMore) loadFollowing(followingPage + 1); }
   }, [activeTab, isLoading, hasMore, page, loadForYou, followingIsLoading, followingHasMore, followingPage, loadFollowing]);
 
   const handleVibeChange = useCallback((vibe) => {
@@ -133,119 +117,102 @@ const FeedScreen = ({ navigation }) => {
       dispatch(likePostOptimistic({ postId }));
       await api.post(`/posts/${postId}/like`);
     } catch (error) {
-      console.error('Like error:', error);
+      dispatch(likePostOptimistic({ postId }));
+      logger.error('Like error:', error);
     }
   }, [dispatch]);
 
+  const openStory = useCallback((authorId) => {
+    // Pass the full rings list and the target authorId; the viewer resolves the
+    // starting index itself, so filtering/order in the rail can't desync it.
+    navigation.navigate('SnapViewer', { rings: storyRings, startAuthorId: authorId });
+  }, [navigation, storyRings]);
+
+  const openOwnOrAdd = useCallback(() => {
+    navigation.navigate('CreateSnap');
+  }, [navigation]);
+
   const renderPost = useCallback(({ item }) => (
-    <PostCard
-      post={item}
-      onLike={handleLikePost}
-      navigation={navigation}
-    />
+    <PostCard post={item} onLike={handleLikePost} navigation={navigation} />
   ), [handleLikePost, navigation]);
 
-  // Tab Bar
+  // Premium segmented tab control with sliding pill.
   const renderTabBar = () => {
-    const indicatorLeft = tabIndicatorAnim.interpolate({
-      inputRange: [0, 1],
-      outputRange: ['0%', '50%'],
-    });
-
+    const translate = tabIndicatorAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
     return (
-      <View style={[styles.tabBar, { borderBottomColor: theme.colors.border }]}>
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => setActiveTab('forYou')}
-          activeOpacity={0.7}
-        >
-          <Text style={[
-            styles.tabText,
-            { color: activeTab === 'forYou' ? theme.colors.text : theme.colors.textSecondary }
-          ]}>
-            For You
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.tab}
-          onPress={() => setActiveTab('following')}
-          activeOpacity={0.7}
-        >
-          <Text style={[
-            styles.tabText,
-            { color: activeTab === 'following' ? theme.colors.text : theme.colors.textSecondary }
-          ]}>
-            Following
-          </Text>
-        </TouchableOpacity>
-
-        {/* Animated underline indicator */}
-        <Animated.View
-          style={[
-            styles.tabIndicator,
-            {
-              backgroundColor: theme.colors.primary,
-              left: indicatorLeft,
-            },
-          ]}
-        />
+      <View style={styles.tabWrap}>
+        <View style={[styles.segment, { backgroundColor: theme.colors.surfaceAlt }]}>
+          <Animated.View
+            style={[
+              styles.segmentPill,
+              theme.elevation(1),
+              {
+                backgroundColor: theme.colors.surface,
+                left: translate.interpolate({ inputRange: [0, 1], outputRange: ['1.5%', '50.5%'] }),
+              },
+            ]}
+          />
+          <TouchableOpacity style={styles.segmentBtn} onPress={() => setActiveTab('forYou')} activeOpacity={0.8}>
+            <Text style={[styles.segmentText, { color: activeTab === 'forYou' ? theme.colors.text : theme.colors.textSecondary }]}>
+              For You
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.segmentBtn} onPress={() => setActiveTab('following')} activeOpacity={0.8}>
+            <Text style={[styles.segmentText, { color: activeTab === 'following' ? theme.colors.text : theme.colors.textSecondary }]}>
+              Following
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
 
-  // Header Component with Drawer Toggle
   const renderHeader = () => (
-    <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: 'transparent' }]}>
+    <View style={[styles.header, { backgroundColor: theme.colors.background }]}>
       <View style={styles.headerRow}>
-        {/* Menu Button */}
-        <TouchableOpacity
-          onPress={() => setDrawerOpen(true)}
-          style={styles.menuBtn}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="menu" size={26} color={theme.colors.text} />
+        <TouchableOpacity onPress={() => setDrawerOpen(true)} style={styles.iconBtn} hitSlop={hit}>
+          <Ionicons name="menu-outline" size={26} color={theme.colors.text} />
         </TouchableOpacity>
 
-        {/* Vibe Indicator — only show on For You tab */}
+        <Text style={[styles.wordmark, { color: theme.colors.text }]}>Pulse</Text>
+
+        <View style={{ flex: 1 }} />
+
         {activeTab === 'forYou' && (
           <TouchableOpacity
             onPress={() => setDrawerOpen(true)}
-            style={[styles.vibeTag, { backgroundColor: theme.colors.primary + '20' }]}
+            style={[styles.vibeChip, { backgroundColor: theme.colors.primaryMuted }]}
+            activeOpacity={0.8}
           >
-            <Text style={[styles.vibeText, { color: theme.colors.primary }]}>
-              {VIBE_LABELS[currentVibe]}
-            </Text>
+            <View style={[styles.vibeDot, { backgroundColor: theme.colors.primary }]} />
+            <Text style={[styles.vibeText, { color: theme.colors.primary }]}>{VIBE_LABELS[currentVibe]}</Text>
           </TouchableOpacity>
         )}
 
-        {/* Spacer */}
-        <View style={{ flex: 1 }} />
-
-        {/* Search Button */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Search')}
-          style={styles.headerIcon}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="search" size={24} color={theme.colors.text} />
+        <TouchableOpacity onPress={() => navigation.navigate('Search')} style={styles.iconBtn} hitSlop={hit}>
+          <Ionicons name="search-outline" size={23} color={theme.colors.text} />
         </TouchableOpacity>
 
-        {/* Notification Button */}
-        <TouchableOpacity
-          onPress={() => navigation.navigate('Profile', { screen: 'Notifications' })}
-          style={styles.headerIcon}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="notifications-outline" size={24} color={theme.colors.text} />
+        <TouchableOpacity onPress={() => navigation.navigate('Profile', { screen: 'Notifications' })} style={styles.iconBtn} hitSlop={hit}>
+          <Ionicons name="notifications-outline" size={23} color={theme.colors.text} />
           {notificationCount > 0 && (
-            <View style={[styles.badge, { backgroundColor: '#FF3B5C' }]}>
+            <View style={[styles.badge, { backgroundColor: theme.colors.accent, borderColor: theme.colors.background }]}>
               <Text style={styles.badgeText}>{notificationCount > 99 ? '99+' : notificationCount}</Text>
             </View>
           )}
         </TouchableOpacity>
       </View>
+      {renderTabBar()}
     </View>
+  );
+
+  const renderListHeader = () => (
+    <SnapRail
+      rings={storyRings}
+      loading={railLoading}
+      onAddPress={openOwnOrAdd}
+      onOpenRing={openStory}
+    />
   );
 
   const renderFooter = (loading, dataLength) => {
@@ -259,40 +226,36 @@ const FeedScreen = ({ navigation }) => {
 
   const renderEmptyFollowing = () => (
     <View style={styles.emptyContainer}>
-      <Ionicons name="people-outline" size={48} color={theme.colors.textSecondary} />
-      <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>No posts yet</Text>
+      <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
+        <Ionicons name="people-outline" size={34} color={theme.colors.textSecondary} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Nothing here yet</Text>
       <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>
-        Follow people to see their posts here
+        Follow people and their posts will appear here.
       </Text>
-      <TouchableOpacity
-        onPress={() => navigation.navigate('Search')}
-        style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]}
-      >
-        <Text style={styles.emptyButtonText}>Find People</Text>
+      <TouchableOpacity onPress={() => navigation.navigate('Search')} style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]} activeOpacity={0.85}>
+        <Text style={[styles.emptyButtonText, { color: theme.colors.onPrimary }]}>Find people</Text>
       </TouchableOpacity>
     </View>
   );
 
-  // Current feed data based on active tab
   const currentPosts = activeTab === 'forYou' ? posts : followingPosts;
   const currentLoading = activeTab === 'forYou' ? isLoading : followingIsLoading;
   const currentError = activeTab === 'forYou' ? isError : followingIsError;
   const currentMessage = activeTab === 'forYou' ? message : followingMessage;
   const currentPage = activeTab === 'forYou' ? page : followingPage;
 
-  // Render the content area based on state
   const renderContent = () => {
     if (currentError && currentPosts.length === 0) {
       return (
         <View style={styles.centerMessage}>
-          <Text style={[styles.errorMessage, { color: theme.colors.error }]}>
-            ⚠️ {currentMessage || 'Failed to load feed'}
-          </Text>
-          <TouchableOpacity
-            onPress={handleRefresh}
-            style={[styles.button, { backgroundColor: theme.colors.primary }]}
-          >
-            <Text style={styles.buttonText}>Try Again</Text>
+          <View style={[styles.emptyIcon, { backgroundColor: theme.colors.surfaceAlt }]}>
+            <Ionicons name="cloud-offline-outline" size={32} color={theme.colors.textSecondary} />
+          </View>
+          <Text style={[styles.emptyTitle, { color: theme.colors.text }]}>Couldn't load feed</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.colors.textSecondary }]}>{currentMessage || 'Check your connection and try again.'}</Text>
+          <TouchableOpacity onPress={handleRefresh} style={[styles.emptyButton, { backgroundColor: theme.colors.primary }]} activeOpacity={0.85}>
+            <Text style={[styles.emptyButtonText, { color: theme.colors.onPrimary }]}>Try again</Text>
           </TouchableOpacity>
         </View>
       );
@@ -300,17 +263,13 @@ const FeedScreen = ({ navigation }) => {
 
     if (currentLoading && currentPosts.length === 0) {
       return (
-        <View style={styles.centerMessage}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>
-            {activeTab === 'forYou' ? 'Loading feed...' : 'Loading following...'}
-          </Text>
-        </View>
+        <>
+          {renderListHeader()}
+          <View style={styles.centerMessage}>
+            <ActivityIndicator size="large" color={theme.colors.primary} />
+          </View>
+        </>
       );
-    }
-
-    if (activeTab === 'following' && currentPosts.length === 0 && !currentLoading) {
-      return renderEmptyFollowing();
     }
 
     return (
@@ -319,7 +278,9 @@ const FeedScreen = ({ navigation }) => {
         data={currentPosts}
         renderItem={renderPost}
         keyExtractor={item => item._id}
-        estimatedItemSize={450}
+        estimatedItemSize={460}
+        ListHeaderComponent={renderListHeader}
+        ListEmptyComponent={activeTab === 'following' && !currentLoading ? renderEmptyFollowing : null}
         refreshing={currentLoading && currentPage === 1}
         onRefresh={handleRefresh}
         onEndReached={handleLoadMore}
@@ -332,14 +293,12 @@ const FeedScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
         {renderHeader()}
-        {renderTabBar()}
         {renderContent()}
       </SafeAreaView>
 
-      {/* Left Drawer - ALWAYS rendered, never removed from tree */}
       <LeftDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
@@ -350,114 +309,40 @@ const FeedScreen = ({ navigation }) => {
   );
 };
 
+const hit = { top: 10, bottom: 10, left: 10, right: 10 };
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuBtn: {
-    padding: 4,
-    marginRight: 12,
-  },
-  headerCenter: {
-    flex: 1,
-  },
-  headerTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 12, marginTop: 1, fontWeight: '500' },
-  vibeTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  vibeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  // Tab bar
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    position: 'relative',
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    width: '50%',
-    height: 3,
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 3,
-  },
-
-  feedList: { paddingVertical: 8 },
-  centerMessage: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loadingText: { marginTop: 12, fontSize: 14 },
-  footerLoader: { paddingVertical: 20, alignItems: 'center' },
-  errorMessage: { fontSize: 16, textAlign: 'center', marginBottom: 20 },
-  button: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 24 },
-  buttonText: { color: '#fff', fontWeight: '600', fontSize: 15 },
-  searchBtn: { padding: 4 },
-  headerIcon: { padding: 4, marginLeft: 12 },
+  header: { paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', height: 40 },
+  wordmark: { fontSize: 22, fontWeight: '800', letterSpacing: -0.6, marginLeft: 8 },
+  iconBtn: { padding: 5, marginLeft: 6 },
+  vibeChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, marginRight: 4 },
+  vibeDot: { width: 6, height: 6, borderRadius: 3 },
+  vibeText: { fontSize: 12.5, fontWeight: '700' },
   badge: {
-    position: 'absolute',
-    top: -4,
-    right: -6,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
+    position: 'absolute', top: -2, right: -3, minWidth: 17, height: 17, borderRadius: 9,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderWidth: 1.5,
   },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '700',
-  },
+  badgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
-  // Empty state for Following tab
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  emptyButton: {
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 24,
-  },
-  emptyButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
+  // Segmented control
+  tabWrap: { paddingTop: 10, paddingBottom: 2 },
+  segment: { flexDirection: 'row', borderRadius: 12, padding: 3, position: 'relative', height: 40 },
+  segmentPill: { position: 'absolute', top: 3, bottom: 3, width: '48%', borderRadius: 9 },
+  segmentBtn: { flex: 1, alignItems: 'center', justifyContent: 'center', zIndex: 1 },
+  segmentText: { fontSize: 14.5, fontWeight: '700' },
+
+  feedList: { paddingBottom: 8 },
+  centerMessage: { paddingVertical: 80, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 30 },
+  footerLoader: { paddingVertical: 20, alignItems: 'center' },
+
+  emptyContainer: { justifyContent: 'center', alignItems: 'center', paddingHorizontal: 40, paddingTop: 60 },
+  emptyIcon: { width: 72, height: 72, borderRadius: 36, alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', marginTop: 2, letterSpacing: -0.3 },
+  emptySubtitle: { fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  emptyButton: { marginTop: 22, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 999 },
+  emptyButtonText: { fontWeight: '700', fontSize: 15 },
 });
 
 export default FeedScreen;
