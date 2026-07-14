@@ -372,7 +372,7 @@ const LoginScreen = () => {
 
             <TextInput
               style={[styles.input, { color: theme.colors.text }]}
-              placeholder="Email or Phone Number"
+              placeholder="you@example.com"
               placeholderTextColor={theme.colors.textSecondary}
               value={identifier}
               onChangeText={setIdentifier}
@@ -399,26 +399,23 @@ const LoginScreen = () => {
             style={[
               styles.loginButton,
               {
-                backgroundColor: theme.colors.primary,
                 opacity: (loading || googleLoading || !identifier.trim()) ? 0.6 : 1,
-                shadowColor: theme.colors.primary,
+                shadowColor: '#6C32E5',
               }
             ]}
             onPress={handleInitiateAuth}
             disabled={loading || googleLoading || !identifier.trim()}
             activeOpacity={0.8}
           >
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={styles.loginButtonText}>Continue</Text>
-            )}
+            <LinearGradient colors={['#5B36F2', '#7A5AF8']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.buttonGradient}>
+              {loading ? <ActivityIndicator color="#FFFFFF" /> : <View style={styles.continueRow}><Text style={styles.loginButtonText}>Continue</Text><Text style={styles.continueArrow}>→</Text></View>}
+            </LinearGradient>
           </TouchableOpacity>
 
           {/* Divider */}
           <View style={styles.dividerContainer}>
             <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
-            <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>or</Text>
+            <Text style={[styles.dividerText, { color: theme.colors.textSecondary }]}>OR</Text>
             <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
           </View>
 
@@ -448,6 +445,7 @@ const LoginScreen = () => {
             )}
           </TouchableOpacity>
         </View>
+        </View>
 
         {/* Footer */}
         <View style={styles.footer}>
@@ -467,12 +465,72 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 28,
+  },
+  hero: {
+    height: 160,
+    alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  centerBrand: {
+    flexDirection: 'row', alignItems: 'center', marginTop: -10,
+  },
+  brandMark: {
+    width: 32, height: 32, borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center',
+  },
+  brandMarkText: {
+    color: '#5B36F2', fontSize: 18, fontWeight: '900', includeFontPadding: false,
+  },
+  brandText: {
+    color: '#FFFFFF', fontSize: 24, fontWeight: '800', letterSpacing: -0.7, marginLeft: 10,
+  },
+  topRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', zIndex: 3,
+  },
+  backGlyph: {
+    color: '#FFFFFF', fontSize: 27, fontWeight: '300', lineHeight: 30,
+  },
+  accountPrompt: {
+    flexDirection: 'row', alignItems: 'center',
+  },
+  accountPromptText: {
+    color: 'rgba(255,255,255,0.82)', fontSize: 10, marginRight: 8,
+  },
+  getStartedPill: {
+    backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 10, height: 27,
+    borderRadius: 7, alignItems: 'center', justifyContent: 'center',
+  },
+  getStartedText: {
+    color: '#FFFFFF', fontSize: 9, fontWeight: '700',
+  },
+  wordmark: {
+    color: '#FFFFFF', fontSize: 28, fontWeight: '800', textAlign: 'center', marginTop: 37, zIndex: 3,
+    letterSpacing: -0.8,
+  },
+  heroLayerOne: {
+    position: 'absolute', left: 18, right: 18, height: 38, bottom: -20, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  heroLayerTwo: {
+    position: 'absolute', left: 34, right: 34, height: 45, bottom: -27, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  authCard: {
+    flex: 1,
+    marginTop: -20,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    zIndex: 4,
+    shadowColor: '#2A174D', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3,
   },
   logoContainer: {
-    alignItems: 'center',
-    marginBottom: 40,
+    display: 'none',
   },
   logoCircle: {
     width: 90,
@@ -493,46 +551,48 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   headerSection: {
-    marginBottom: 32,
-    alignItems: 'center',
+    marginBottom: 22,
+    alignItems: 'flex-start',
   },
   title: {
-    fontSize: 28,
+    fontSize: 25,
     fontWeight: '700',
-    marginBottom: 10,
-    textAlign: 'center',
+    marginBottom: 6,
+    textAlign: 'left',
+    letterSpacing: -0.6,
   },
   subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
+    fontSize: 13,
+    textAlign: 'left',
     opacity: 0.8,
   },
   inputSection: {
-    marginBottom: 24,
+    marginBottom: 10,
+  },
+  inputLabel: {
+    fontSize: 9, fontWeight: '800', letterSpacing: 0.8, marginBottom: 8, opacity: 0.75,
   },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 64,
-    borderRadius: 18,
-    paddingHorizontal: 16,
+    height: 56,
+    borderRadius: 15,
+    paddingHorizontal: 15,
   },
   leftIcon: {
-    marginRight: 14,
-    width: 24,
-    alignItems: 'center',
+    display: 'none',
   },
   input: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 13,
     fontWeight: '500',
     height: '100%',
   },
   errorContainer: {
-    height: 24,
+    height: 25,
     justifyContent: 'center',
     marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 2,
     paddingHorizontal: 4,
   },
   errorText: {
@@ -541,62 +601,64 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   loginButton: {
-    height: 64,
-    borderRadius: 18,
+    height: 55,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    overflow: 'hidden',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.35,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 5,
   },
+  buttonGradient: {
+    flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center',
+  },
+  continueRow: { flexDirection: 'row', alignItems: 'center' },
+  continueArrow: { color: '#FFFFFF', fontSize: 18, marginLeft: 9, marginTop: -1 },
   loginButtonText: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
   dividerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 24,
+    marginVertical: 18,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    paddingHorizontal: 16,
-    fontSize: 14,
+    paddingHorizontal: 12,
+    fontSize: 9,
     fontWeight: '500',
   },
   googleButton: {
     flexDirection: 'row',
-    height: 60,
-    borderRadius: 18,
+    height: 53,
+    borderRadius: 15,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
+    borderWidth: 1,
     gap: 12,
   },
   googleIcon: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '700',
     color: '#4285F4',
   },
   googleButtonText: {
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '600',
   },
   footer: {
-    marginTop: 'auto',
-    marginBottom: 20,
-    alignItems: 'center',
-    opacity: 0.6,
+    display: 'none',
   },
   footerText: {
-    fontSize: 13,
+    fontSize: 10,
     fontWeight: '500',
   }
 });
