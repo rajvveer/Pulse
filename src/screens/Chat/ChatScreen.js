@@ -26,6 +26,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { getTheme } from '../../styles/theme';
 import api from '../../services/api';
 import socketService from '../../services/socket';
+import callService from '../../services/callService';
 import GifPickerModal from '../../components/GifPickerModal';
 
 const { width, height } = Dimensions.get('window');
