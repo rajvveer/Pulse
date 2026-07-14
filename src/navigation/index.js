@@ -37,20 +37,25 @@ import BookmarksScreen from "../screens/BookmarksScreen";
 import PushNotificationHandler from "../components/Notifications/PushNotificationHandler";
 import RouletteScreen from "../screens/RouletteScreen";
 import GroupInfoScreen from "../screens/GroupInfoScreen";
+import IncomingCallScreen from "../screens/Call/IncomingCallScreen";
+import OutgoingCallScreen from "../screens/Call/OutgoingCallScreen";
+import CallScreen from "../screens/Call/CallScreen";
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
 
+// Create is intentionally absent here — it's still a registered Tab.Screen so
+// navigation.navigate('Create') works, but it's reached via the "+" FAB on the
+// Feed (and other screens), not the bottom bar. Keeps the bar to 5 tabs.
 const TAB_ICONS = {
-  Feed: { active: 'home', inactive: 'home-outline' },
-  Nearby: { active: 'map', inactive: 'map-outline' },
-  Reels: { active: 'videocam', inactive: 'videocam-outline' },
-  Create: { active: 'add-circle', inactive: 'add-circle-outline' },
-  Chat: { active: 'chatbubbles', inactive: 'chatbubbles-outline' },
-  Whisper: { active: 'eye-off', inactive: 'eye-off-outline' },
+  Feed: { active: 'home', inactive: 'home-outline', label: 'Home' },
+  Nearby: { active: 'map', inactive: 'map-outline', label: 'Nearby' },
+  Reels: { active: 'videocam', inactive: 'videocam-outline', label: 'Reels' },
+  Chat: { active: 'chatbubble', inactive: 'chatbubble-outline', label: 'Chat' },
+  Whisper: { active: 'eye-off', inactive: 'eye-off-outline', label: 'Whisper' },
 };
 
-const VISIBLE_TABS = ['Feed', 'Nearby', 'Reels', 'Create', 'Chat', 'Whisper'];
+const VISIBLE_TABS = ['Feed', 'Nearby', 'Reels', 'Chat', 'Whisper'];
 
 const CustomTabBar = ({ state, descriptors, navigation }) => {
   const { colors } = useTheme();
