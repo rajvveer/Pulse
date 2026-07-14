@@ -342,21 +342,22 @@ const LoginScreen = () => {
         {/* Header */}
         <View style={styles.headerSection}>
           <Text style={[styles.title, { color: theme.colors.text }]}>
-            Welcome to Pulse
+            Jump back in
           </Text>
           <Text style={[styles.subtitle, { color: theme.colors.textSecondary }]}>
-            Enter your details to continue
+            One step away from your people.
           </Text>
         </View>
 
         {/* Input Section */}
         <View style={styles.inputSection}>
+          <Text style={[styles.inputLabel, { color: theme.colors.textSecondary }]}>EMAIL OR PHONE</Text>
           <View style={[
             styles.inputContainer,
             {
-              backgroundColor: isDark ? '#1A1A1A' : '#F7F7F8',
-              borderColor: error ? '#FF4B4B' : isFocused ? theme.colors.primary : 'transparent',
-              borderWidth: 2,
+              backgroundColor: isDark ? '#211C2A' : '#FFFFFF',
+              borderColor: error ? '#FF4B4B' : isFocused ? '#6C32E5' : (isDark ? '#393143' : '#E8E5ED'),
+              borderWidth: 1,
               shadowColor: isFocused ? theme.colors.primary : '#000',
               shadowOpacity: isFocused ? 0.15 : 0,
               shadowRadius: 10,
