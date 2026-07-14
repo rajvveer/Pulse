@@ -51,11 +51,12 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon_v3.png"
     },
     "extra": {
       "apiUrl": "http://localhost:3000/api/v1",
       "socketUrl": "http://localhost:3000",
+      "livekitWsUrl": "wss://pulse-1fgmfs6y.livekit.cloud",
       "eas": {
         "projectId": "9e305855-a5a5-4744-b8ab-7a35789cb4da"
       }
