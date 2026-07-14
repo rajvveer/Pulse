@@ -299,6 +299,21 @@ const FeedScreen = ({ navigation }) => {
         {renderContent()}
       </SafeAreaView>
 
+      {/* Compose FAB — floats just above the tab bar; primary create action. */}
+      <TouchableOpacity
+        onPress={() => navigation.navigate('Create')}
+        activeOpacity={0.9}
+        accessibilityRole="button"
+        accessibilityLabel="Create post"
+        style={[
+          styles.fab,
+          theme.elevation(3),
+          { backgroundColor: theme.colors.primary, opacity: 0.85 },
+        ]}
+      >
+        <Ionicons name="add" size={30} color={theme.colors.onPrimary} />
+      </TouchableOpacity>
+
       <LeftDrawer
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
