@@ -9,6 +9,7 @@ import { store } from './src/redux/store';
 import { loginSuccess, setUser } from './src/redux/slices/authSlice';
 import api from './src/services/api';
 import { RootNavigator } from './src/navigation';
+import { navigationRef } from './src/navigation/navigationRef';
 import { ThemeProvider, useTheme } from './src/contexts/ThemeContext';
 import { ThemeStatusBar } from './src/components/UI/ThemeStatusBar';
 import pushNotifications from './src/services/pushNotifications';
