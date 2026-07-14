@@ -78,6 +78,13 @@ const PushNotificationHandler = () => {
 
         try {
             switch (data.type) {
+                case 'incoming_call':
+                    // Tapped an incoming-call notification (app was backgrounded /
+                    // cold-launched). Present the ring UI; callService dedupes if
+                    // the ws invite already did.
+                    callService.presentIncoming(data);
+                    break;
+
                 case 'like':
                 case 'comment':
                 case 'mention':
