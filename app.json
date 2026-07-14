@@ -66,6 +66,13 @@
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
       [
+        "@config-plugins/react-native-webrtc",
+        {
+          "cameraPermission": "Pulse needs camera access for video calls.",
+          "microphonePermission": "Pulse needs microphone access for voice and video calls."
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
