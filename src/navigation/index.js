@@ -180,6 +180,24 @@ export const RootNavigator = () => {
             <Stack.Screen name="Search" component={SearchScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Bookmarks" component={BookmarksScreen} options={{ presentation: 'card' }} />
             <Stack.Screen name="Roulette" component={RouletteScreen} options={{ presentation: 'modal' }} />
+
+            {/* CALLING (voice/video) — full-screen, gesture-locked so the call
+                can't be swiped away mid-conversation. */}
+            <Stack.Screen
+              name="IncomingCallScreen"
+              component={IncomingCallScreen}
+              options={{ presentation: 'transparentModal', gestureEnabled: false, animationEnabled: true }}
+            />
+            <Stack.Screen
+              name="OutgoingCallScreen"
+              component={OutgoingCallScreen}
+              options={{ presentation: 'transparentModal', gestureEnabled: false, animationEnabled: true }}
+            />
+            <Stack.Screen
+              name="CallScreen"
+              component={CallScreen}
+              options={{ presentation: 'transparentModal', gestureEnabled: false, animationEnabled: true }}
+            />
           </>
         ) : (
           <Stack.Screen name="Auth" component={AuthStack} />
