@@ -126,7 +126,7 @@ const ChatScreen = ({ route, navigation }) => {
       socketService.leaveConversation(conversationId);
       cleanupSocketListeners();
       if (socketService.socket) {
-        socketService.socket.off('user-status');
+        socketService.socket.off('user_status_change');
       }
     };
   }, [conversationId, token]);
