@@ -187,7 +187,7 @@ const NavigationTheme = ({ children }) => {
   };
 
   return (
-    <NavigationContainer theme={isDark ? customDarkTheme : customLightTheme} linking={linking}>
+    <NavigationContainer ref={navigationRef} theme={isDark ? customDarkTheme : customLightTheme} linking={linking}>
       {children}
     </NavigationContainer>
   );
