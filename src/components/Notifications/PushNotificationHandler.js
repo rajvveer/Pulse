@@ -5,11 +5,13 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import pushNotifications from '../../services/pushNotifications';
+import callService from '../../services/callService';
 
 const PushNotificationHandler = () => {
     const navigation = useNavigation();
     const notificationListener = useRef();
     const responseListener = useRef();
+    const fgCallListener = useRef();
 
     useEffect(() => {
         // Register Expo push token with backend
