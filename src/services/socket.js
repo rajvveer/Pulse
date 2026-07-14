@@ -1,16 +1,26 @@
-import { io } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 
 // ============================================================
-// SOCKET CONFIGURATION — reads from app.json > extra > socketUrl
+// SOCKET CONFIGURATION
+// ------------------------------------------------------------
+// The C++ backend speaks RAW WebSocket (one JSON text frame per event,
+// `{ event, data, ack? }`), NOT Socket.IO's Engine.IO protocol. So this client
+// is a thin raw-WebSocket wrapper that preserves the previous socketService
+// public API (connect/emit/on/off/joinConversation/sendMessage/...) plus a
+// `.socket` shim, so the screens (ChatScreen, ShareToDMSheet) work unchanged.
+//
+// Wire contract (see backend src/sockets/realtime_controller.cc):
+//   - Connect:  ws://host:3000/ws?token=<accessToken>
+//   - Send:     { event, data, ack? }   (ack = numeric id for a callback)
+//   - Receive:  { event, data }         (server->client events)
+//   - Ack:      { event:'ack', ack:<id>, data }  (reply to an emit with ack)
 // ============================================================
 const getExpoHost = () => {
   const hostUri =
     Constants.expoConfig?.hostUri ||
     Constants.manifest?.debuggerHost ||
     Constants.manifest2?.extra?.expoClient?.hostUri;
-
   return hostUri?.split(':')[0];
 };
 
