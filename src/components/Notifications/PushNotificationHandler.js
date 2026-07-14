@@ -19,6 +19,21 @@ const PushNotificationHandler = () => {
             console.log('🔔 Push notification init:', result);
         });
 
+        // Wire up call signaling (ring/accept/reject over the ws). Idempotent.
+        callService.init();
+
+        // An incoming-call DATA push can arrive while the app is FOREGROUNDED.
+        // The ws call_invite usually beats it (and callService dedupes by
+        // callId), but if the socket is down the push is our only ring signal —
+        // so present the incoming call straight from the received notification,
+        // not just on tap.
+        fgCallListener.current = pushNotifications.addNotificationReceivedListener((notification) => {
+            const data = notification?.request?.content?.data;
+            if (data && data.type === 'incoming_call') {
+                callService.presentIncoming(data);
+            }
+        });
+
         // Handle notification received while app is in foreground
         notificationListener.current = pushNotifications.addNotificationReceivedListener(notification => {
             console.log('📥 Notification received in foreground:', notification);
