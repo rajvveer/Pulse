@@ -67,6 +67,9 @@ const PushNotificationHandler = () => {
             if (responseListener.current) {
                 responseListener.current.remove();
             }
+            if (fgCallListener.current) {
+                fgCallListener.current.remove();
+            }
         };
     }, []);
 
