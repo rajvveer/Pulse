@@ -304,59 +304,52 @@ class SocketService {
     this.emit('send_message', payload, callback);
   }
 
-  onNewMessage(callback) {
-    this.on('new_message', callback);
-  }
+  onNewMessage(callback) { this.on('new_message', callback); }
+  onTyping(callback) { this.on('user_typing', callback); }
+  startTyping(conversationId) { this.emit('typing_start', { conversationId }); }
+  stopTyping(conversationId) { this.emit('typing_stop', { conversationId }); }
+  removeListener(eventName, callback) { this.off(eventName, callback); }
 
-  onTyping(callback) {
-    this.on('user_typing', callback);
-  }
-
-  startTyping(conversationId) {
-    this.emit('typing_start', { conversationId });
-  }
-
-  stopTyping(conversationId) {
-    this.emit('typing_stop', { conversationId });
-  }
-
-  removeListener(eventName, callback) {
-    this.off(eventName, callback);
-  }
-
-  // ✅ CONNECTION STATE HELPERS
-  get isConnected() {
-    return socket?.connected || false;
-  }
-
-  // ✅ Update token (call this after HTTP token refresh)
-  updateToken(newToken) {
-    if (socket) {
-      socket.auth.token = newToken;
-      console.log('🔑 Socket auth token updated');
-
-      // If disconnected due to auth, reconnect with new token
-      if (!socket.connected) {
-        console.log('🔄 Reconnecting socket with fresh token...');
-        socket.connect();
-      }
-    }
-  }
-
-  get isConnecting() {
-    return socket?.connecting || false;
-  }
-
+  get isConnected() { return !!ws && ws.readyState === WebSocket.OPEN; }
+  get isConnecting() { return !!ws && ws.readyState === WebSocket.CONNECTING; }
   get connectionState() {
-    if (!socket) return 'disconnected';
-    if (socket.connected) return 'connected';
-    if (socket.connecting) return 'connecting';
+    if (!ws) return 'disconnected';
+    if (ws.readyState === WebSocket.OPEN) return 'connected';
+    if (ws.readyState === WebSocket.CONNECTING) return 'connecting';
     return 'disconnected';
   }
 
-  // Expose the socket instance getter
+  updateToken(newToken) {
+    if (!newToken) return;
+    token = newToken;
+    authFailures = 0; // a genuine refresh — allow reconnects again after give-up
+    log('🔑 Socket auth token updated');
+    if (!this.isConnected && !this.isConnecting && !manualClose) {
+      log('🔄 Reconnecting socket with fresh token...');
+      this._open();
+    }
+  }
+
+  // ── .socket shim ───────────────────────────────────────────────────────────
+  // ChatScreen accesses socketService.socket.{on,off,emit,connected} directly
+  // (it was the raw socket.io instance). Expose a compatible facade. It is a
+  // SINGLE memoized object (not rebuilt per access) so reference checks and any
+  // `if (socketService.socket)` truthiness are stable. NOTE: prefer
+  // socketService.isConnected for connection guards — `.socket` is always truthy.
   get socket() {
-    return socket;
+    if (!this._shim) {
+      const self = this;
+      this._shim = {
+        on: (event, cb) => self.on(event, cb),
+        off: (event, cb) => self.off(event, cb),
+        emit: (event, data, cb) => self.emit(event, data, cb),
+        connect: () => self.connect(token),
+        disconnect: () => self.disconnect(),
+        get connected() { return self.isConnected; },
+        get connecting() { return self.isConnecting; },
+      };
+    }
+    return this._shim;
   }
 }
 
