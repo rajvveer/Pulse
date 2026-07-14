@@ -24,20 +24,25 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Pulse needs location access to show nearby posts and connect you with your local community.",
-        "NSCameraUsageDescription": "Pulse needs camera access to let you capture and share moments.",
-        "NSMicrophoneUsageDescription": "Pulse needs microphone access for video posts."
+        "NSCameraUsageDescription": "Pulse needs camera access for video calls and to capture and share moments.",
+        "NSMicrophoneUsageDescription": "Pulse needs microphone access for voice and video calls.",
+        "UIBackgroundModes": ["audio", "voip"]
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/pulse_icon.png",
-        "backgroundColor": "#1E88E5"
+        "foregroundImage": "./assets/pulse_icon_v3.png",
+        "backgroundColor": "#050817"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
         "CAMERA",
         "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "BLUETOOTH",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MICROPHONE",
         "POST_NOTIFICATIONS"
       ],
       "usesCleartextTraffic": true,
