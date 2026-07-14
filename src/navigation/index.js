@@ -64,15 +64,18 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
   return (
     <View style={{
       flexDirection: 'row',
+      alignItems: 'center',
       backgroundColor: colors.card,
-      paddingTop: 10,
-      paddingBottom: Math.max(insets.bottom, 10),
-      borderTopWidth: 0,
-      elevation: 10,
+      paddingTop: 8,
+      paddingBottom: Math.max(insets.bottom, 12),
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      // Soft lift off the content, slightly stronger than a card.
       shadowColor: '#000',
-      shadowOffset: { width: 0, height: -2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
+      shadowOffset: { width: 0, height: -3 },
+      shadowOpacity: 0.08,
+      shadowRadius: 12,
+      elevation: 12,
     }}>
       {state.routes.map((route, index) => {
         if (!VISIBLE_TABS.includes(route.name)) return null;
