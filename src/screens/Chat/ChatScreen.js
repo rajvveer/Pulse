@@ -134,13 +134,14 @@ const ChatScreen = ({ route, navigation }) => {
   const setupSocketListeners = () => {
     if (!socketService.socket) return;
 
-    // Online/offline status tracking
-    socketService.socket.off('user-status');
-    socketService.socket.on('user-status', ({ userId, status }) => {
+    // Online/offline status tracking. The backend emits `user_status_change`
+    // with { userId, isOnline } (see realtime_controller notifyConversationPeers).
+    socketService.socket.off('user_status_change');
+    socketService.socket.on('user_status_change', ({ userId, isOnline }) => {
       const peerId = getUserId(targetUser);
       if (String(userId) === String(peerId)) {
-        setPeerOnline(status === 'online');
-        if (status !== 'online') {
+        setPeerOnline(!!isOnline);
+        if (!isOnline) {
           setPeerLastSeen(new Date().toISOString());
         }
       }
