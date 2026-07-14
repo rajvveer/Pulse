@@ -99,13 +99,16 @@ const ChatScreen = ({ route, navigation }) => {
     markAsRead();
     fetchMessages();
 
-    if (!socketService.socket && token) {
+    // Open the socket if it isn't already connected/connecting. (Guarding on
+    // `socketService.socket` is wrong — that shim is always truthy; use the
+    // connection-state booleans so a cold deep-link into a chat connects.)
+    if (!socketService.isConnected && !socketService.isConnecting && token) {
       socketService.connect(token);
     }
 
     const attemptJoin = () => {
       if (!isMounted) return;
-      if (socketService.socket && socketService.socket.connected) {
+      if (socketService.isConnected) {
         console.log("🚪 Joining room:", conversationId);
         socketService.joinConversation(conversationId);
         setupSocketListeners();
