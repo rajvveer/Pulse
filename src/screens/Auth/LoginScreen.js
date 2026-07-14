@@ -304,13 +304,26 @@ const LoginScreen = () => {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: isDark ? '#100C20' : '#F1EFFF' }]} edges={['top', 'left', 'right']}>
       <Animated.View
         style={[
           styles.content,
           { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
         ]}
       >
+        <LinearGradient
+          colors={isDark ? ['#17132D', '#332472'] : ['#241653', '#6043CF']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.hero}
+        >
+          <Animated.View style={[styles.centerBrand, { transform: [{ scale: scaleAnim }] }]}>
+            <View style={styles.brandMark}><Text style={styles.brandMarkText}>P</Text></View>
+            <Text style={styles.brandText}>pulse</Text>
+          </Animated.View>
+        </LinearGradient>
+
+        <View style={[styles.authCard, { backgroundColor: isDark ? '#17131F' : '#FFFFFF' }]}>
         {/* LOGO SECTION */}
         <View style={styles.logoContainer}>
           <Animated.View
