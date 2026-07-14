@@ -91,39 +91,25 @@ const CustomTabBar = ({ state, descriptors, navigation }) => {
           }
         };
 
-        if (route.name === 'Create') {
-          return (
-            <TouchableOpacity
-              key={route.key}
-              onPress={onPress}
-              activeOpacity={0.7}
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <View style={{
-                marginTop: -18,
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 4,
-                elevation: 5,
-              }}>
-                <Ionicons name={isFocused ? iconSet.active : iconSet.inactive} size={44} color={colors.primary} />
-              </View>
-            </TouchableOpacity>
-          );
-        }
+        // Neutral active state — active = full-strength text color, inactive =
+        // muted tertiary. No blue tint in the bar. The "+" Create tab is a plain
+        // icon like every other tab (icon name set in TAB_ICONS).
+        const tint = isFocused ? colors.text : colors.textTertiary;
 
         return (
           <TouchableOpacity
             key={route.key}
             onPress={onPress}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={iconSet.label}
             style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 }}
           >
             <Ionicons
               name={isFocused ? iconSet.active : iconSet.inactive}
-              size={24}
-              color={isFocused ? colors.primary : colors.text}
+              size={26}
+              color={tint}
             />
           </TouchableOpacity>
         );
