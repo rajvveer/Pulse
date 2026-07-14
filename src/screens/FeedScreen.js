@@ -358,6 +358,13 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: 14, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   emptyButton: { marginTop: 22, paddingVertical: 12, paddingHorizontal: 28, borderRadius: 999 },
   emptyButtonText: { fontWeight: '700', fontSize: 15 },
+
+  // Floating compose button — bottom-right, just above the bottom tab bar.
+  fab: {
+    position: 'absolute', right: 18, bottom: 18,
+    width: 56, height: 56, borderRadius: 28,
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
 
 export default FeedScreen;
