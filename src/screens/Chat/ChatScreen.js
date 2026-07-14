@@ -425,6 +425,32 @@ const ChatScreen = ({ route, navigation }) => {
     });
   };
 
+  // Start a voice/video call to the chat peer. 1:1 only for now (group calling
+  // is a later concern). Hands off to callService, which navigates to the
+  // outgoing-call screen and mints LiveKit credentials via the backend.
+  const startCall = (callType) => {
+    if (isGroup) {
+      Alert.alert('Calls', 'Group calls are not supported yet.');
+      return;
+    }
+    if (!targetUser) {
+      Alert.alert('Calls', 'Cannot start a call here.');
+      return;
+    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    callService.startCall({
+      conversationId,
+      peer: {
+        _id: getUserId(targetUser),
+        username: targetUser?.username || targetUser?.name,
+        name: targetUser?.name || targetUser?.username,
+        avatar: targetUser?.profile?.avatar || targetUser?.avatar,
+      },
+      calleeId: getUserId(targetUser),
+      callType,
+    });
+  };
+
   // ✅ Updated Header for Group Support
   const formatLastSeen = (dateStr) => {
     if (!dateStr) return '';
