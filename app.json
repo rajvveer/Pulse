@@ -5,7 +5,7 @@
     "scheme": "pulse",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/pulse_icon.png",
+    "icon": "./assets/pulse_icon_v3.png",
     "userInterfaceStyle": "automatic",
     "jsEngine": "hermes",
     "newArchEnabled": true,
