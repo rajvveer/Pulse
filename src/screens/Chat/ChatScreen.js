@@ -530,11 +530,11 @@ const ChatScreen = ({ route, navigation }) => {
         </TouchableOpacity>
 
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="call-outline" size={24} color={theme.colors.text} />
+          <TouchableOpacity style={styles.headerBtn} onPress={() => startCall('audio')} disabled={isGroup}>
+            <Ionicons name="call-outline" size={24} color={isGroup ? theme.colors.textTertiary : theme.colors.text} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.headerBtn}>
-            <Ionicons name="videocam-outline" size={26} color={theme.colors.text} />
+          <TouchableOpacity style={styles.headerBtn} onPress={() => startCall('video')} disabled={isGroup}>
+            <Ionicons name="videocam-outline" size={26} color={isGroup ? theme.colors.textTertiary : theme.colors.text} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.headerBtn}
