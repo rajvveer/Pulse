@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Pulse app icon">
+  <defs>
+    <radialGradient id="bg" cx="32%" cy="24%" r="86%">
+      <stop offset="0%" stop-color="#10245A"/>
+      <stop offset="42%" stop-color="#071229"/>
+      <stop offset="100%" stop-color="#050817"/>
+    </radialGradient>
+    <linearGradient id="markBlue" x1="248" y1="244" x2="720" y2="744" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#63E6FF"/>
+      <stop offset="42%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#1639B6"/>
+    </linearGradient>
+    <linearGradient id="markWarm" x1="594" y1="298" x2="842" y2="624" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF8A8F"/>
+      <stop offset="100%" stop-color="#FF5A5F"/>
+    </linearGradient>
+    <linearGradient id="pulseLine" x1="208" y1="514" x2="820" y2="514" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#5B8DEF"/>
+      <stop offset="44%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FF6B70"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect x="96" y="96" width="832" height="832" rx="188" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="4"/>
+
+  <g filter="url(#softShadow)">
+    <path
+      d="M362 716V336c0-67 54-121 121-121h116c120 0 218 95 218 213 0 119-98 214-218 214H487"
+      fill="none"
+      stroke="url(#markBlue)"
+      stroke-width="86"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+    <path
+      d="M594 252c116 10 202 85 220 190 14 85-19 163-91 214"
+      fill="none"
+      stroke="url(#markWarm)"
+      stroke-width="54"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+    <path
+      d="M218 516h158l52-93 86 214 72-122h220"
+      fill="none"
+      stroke="url(#pulseLine)"
+      stroke-width="42"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+    <circle cx="218" cy="516" r="45" fill="#0B1220" stroke="#5B8DEF" stroke-width="28"/>
+    <circle cx="806" cy="515" r="45" fill="#0B1220" stroke="#FF6B70" stroke-width="28"/>
+    <circle cx="515" cy="728" r="42" fill="#0B1220" stroke="#63E6FF" stroke-width="24"/>
+  </g>
+</svg>
